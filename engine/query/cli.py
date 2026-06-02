@@ -16,7 +16,7 @@ try:
 except Exception:
     pass
 
-from ..config import WAREHOUSE_PATH, has_anthropic_key
+from ..config import WAREHOUSE_PATH, active_dataset, has_anthropic_key
 from .grounding import build_grounding_context
 from .orchestrator import run_to_executed_answer
 from .trace import TraceEvent
@@ -51,7 +51,7 @@ def _trace_printer() -> "callable":
 
 
 def answer(question: str, ctx=None) -> int:
-    ctx = ctx or build_grounding_context()
+    ctx = ctx or build_grounding_context(active_dataset())
     print(f"\nQ: {question}\n" + "-" * 70)
     result = run_to_executed_answer(question, ctx, on_event=_trace_printer())
     fa = result.final_answer
@@ -92,8 +92,9 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    print("Grounding schema from DuckDB marts...")
-    ctx = build_grounding_context()
+    ds = active_dataset()
+    print(f"Grounding schema for dataset '{ds}' from DuckDB...")
+    ctx = build_grounding_context(ds)
     print(f"  grounded {len(ctx.tables)} tables, {len(ctx.relationships)} relationships.")
 
     if argv:

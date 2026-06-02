@@ -124,7 +124,9 @@ def _snapshot_counts() -> dict[str, int]:
     try:
         rows = con.execute(
             "select table_schema, table_name from information_schema.tables "
-            "where table_schema in ('raw','staging','marts')"
+            "where table_schema like '%\\_raw' escape '\\' "
+            "   or table_schema like '%\\_staging' escape '\\' "
+            "   or table_schema like '%\\_marts' escape '\\'"
         ).fetchall()
         for sch, tbl in rows:
             try:
@@ -222,7 +224,7 @@ def _inject_break() -> None:
         "-- Asserts every species has a recorded maximum longevity. It does NOT —\n"
         "-- ~10% are null — so this test returns rows and dbt marks it failed.\n"
         "select hagrid, common_name, kingdom\n"
-        "from {{ ref('stg_anage') }}\n"
+        "from {{ ref('anage__stg_anage') }}\n"
         "where max_longevity_yrs is null\n",
         encoding="utf-8",
     )

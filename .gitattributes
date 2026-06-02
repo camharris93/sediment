@@ -1,0 +1,17 @@
+# Normalize line endings to LF inside the repo; check out native per-OS.
+# Silences the "LF will be replaced by CRLF" warnings on Windows and keeps
+# diffs clean for collaborators on macOS/Linux.
+* text=auto eol=lf
+
+# Always-LF for the shell/SQL/yaml the tools parse.
+*.sh    text eol=lf
+*.py    text eol=lf
+*.sql   text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+Makefile text eol=lf
+
+# Binary — never normalize.
+*.duckdb   binary
+*.parquet  binary
+*.zip       binary

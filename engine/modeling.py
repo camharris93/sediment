@@ -63,27 +63,23 @@ def validate_model_name(name: str) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def to_dbt_refs(sql: str) -> str:
-    """Turn `staging.x` / `marts.x` -> {{ ref('x') }} and `raw.x` ->
-    {{ source('raw','x') }} so chat SQL becomes a committable dbt model. Handles
-    both quoted and unquoted schema-qualified names."""
-    def ref_unquoted(m: re.Match) -> str:
-        schema, tbl = m.group(1).lower(), m.group(2)
-        if schema == "raw":
-            return f"{{{{ source('raw', '{tbl}') }}}}"
-        return f"{{{{ ref('{tbl}') }}}}"
+    """Turn `<dataset>_staging.x` / `<dataset>_marts.x` -> {{ ref('x') }} and
+    `<dataset>_raw.x` -> {{ source('<dataset>','x') }} so chat SQL (which references
+    the namespaced warehouse schemas) becomes a committable dbt model. Handles
+    quoted and unquoted forms."""
+    def repl(m: re.Match) -> str:
+        dataset, layer, tbl = m.group(1), m.group(2).lower(), m.group(3)
+        if layer == "raw":
+            return f"{{{{ source('{dataset}', '{tbl}') }}}}"
+        # Model names are dataset-prefixed; ref the prefixed node name.
+        return f"{{{{ ref('{dataset}__{tbl}') }}}}"
 
-    def ref_quoted(m: re.Match) -> str:
-        schema, tbl = m.group(1).lower(), m.group(2)
-        if schema == "raw":
-            return f"{{{{ source('raw', '{tbl}') }}}}"
-        return f"{{{{ ref('{tbl}') }}}}"
-
-    sql = re.sub(r'"(staging|marts|raw)"\."([A-Za-z_]\w*)"', ref_quoted, sql, flags=re.I)
-    sql = re.sub(r'\b(staging|marts|raw)\.([A-Za-z_]\w*)\b', ref_unquoted, sql, flags=re.I)
+    sql = re.sub(r'"([A-Za-z]\w*?)_(raw|staging|marts)"\."([A-Za-z_]\w*)"', repl, sql, flags=re.I)
+    sql = re.sub(r'\b([A-Za-z]\w*?)_(raw|staging|marts)\.([A-Za-z_]\w*)\b', repl, sql, flags=re.I)
     return sql
 
 
-def model_text(name: str, dbt_sql: str, *, question: str = "", rationale: str = "") -> str:
+def model_text(name: str, dbt_sql: str, *, dataset: str, question: str = "", rationale: str = "") -> str:
     header = [
         f"-- {name}",
         "-- Promoted from an NL->SQL chat answer. REVIEW before committing.",
@@ -92,7 +88,10 @@ def model_text(name: str, dbt_sql: str, *, question: str = "", rationale: str = 
         header.append(f"-- Question: {question}")
     if rationale:
         header.append(f"-- Rationale: {rationale}")
-    return "\n".join(header) + "\n\n" + dbt_sql.strip() + "\n"
+    # Land it in the dataset's own marts schema; alias keeps the relation clean
+    # (<dataset>_marts.<name>) while the model node name stays dataset-prefixed.
+    cfg = f"{{{{ config(schema='{dataset}_marts', alias='{name}') }}}}"
+    return "\n".join(header) + "\n" + cfg + "\n\n" + dbt_sql.strip() + "\n"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -169,15 +168,17 @@ class MaterializeResult:
     error: str | None = None
 
 
-def propose_model(name: str, raw_sql: str, *, question: str = "", rationale: str = "") -> Path:
-    """Write the model file (raw refs rewritten to dbt refs) for human review. Does
-    not build it. Returns the path written."""
+def propose_model(name: str, raw_sql: str, *, dataset: str, question: str = "", rationale: str = "") -> Path:
+    """Write the model file (raw refs rewritten to dbt refs, tagged to land in
+    `<dataset>_marts`) for human review. Does not build it. Returns the path."""
     require_build_mode()
     name = validate_model_name(name)
     MARTS_DIR.mkdir(parents=True, exist_ok=True)
-    path = MARTS_DIR / f"{name}.sql"
-    path.write_text(model_text(name, to_dbt_refs(raw_sql), question=question, rationale=rationale),
-                    encoding="utf-8")
+    # File/node name is dataset-prefixed (globally unique); alias (in model_text)
+    # keeps the warehouse relation as <dataset>_marts.<name>.
+    path = MARTS_DIR / f"{dataset}__{name}.sql"
+    path.write_text(model_text(name, to_dbt_refs(raw_sql), dataset=dataset,
+                               question=question, rationale=rationale), encoding="utf-8")
     return path
 
 
@@ -187,16 +188,16 @@ def _dbt_cmd() -> list[str]:
     return [exe] if exe else [sys.executable, "-m", "dbt.cli.main"]
 
 
-def materialize_model(name: str, raw_sql: str, *, question: str = "", rationale: str = "") -> MaterializeResult:
-    """Write the model AND `dbt run --select` it into `marts`. The author's
-    ship-it action. Cleans up the sandbox copy if present."""
+def materialize_model(name: str, raw_sql: str, *, dataset: str, question: str = "", rationale: str = "") -> MaterializeResult:
+    """Write the model AND `dbt run --select` it into `<dataset>_marts`. The
+    author's ship-it action. Cleans up the sandbox copy if present."""
     require_build_mode()
     name = validate_model_name(name)
-    path = propose_model(name, raw_sql, question=question, rationale=rationale)
+    path = propose_model(name, raw_sql, dataset=dataset, question=question, rationale=rationale)
     env = os.environ.copy()
     env["DBT_PROFILES_DIR"] = str(DBT_PROJECT_DIR)
     proc = subprocess.run(
-        _dbt_cmd() + ["run", "--select", name],
+        _dbt_cmd() + ["run", "--select", f"{dataset}__{name}"],
         cwd=str(DBT_PROJECT_DIR), env=env, capture_output=True, text=True,
     )
     out = (proc.stdout or "") + (proc.stderr or "")

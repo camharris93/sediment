@@ -150,11 +150,35 @@ a `sources.yml` entry) into one idempotent command. It **never** auto-installs m
 their semantics are yours to decide. Re-running is safe; it won't overwrite a curated
 staging model unless you pass `--force`.
 
-**Honest scope of "any dataset" today:**
-- **Single-table** per dataset for now (multi-table onboarding — joins across tables —
-  is on the roadmap; the *query agent* is already multi-table aware). See `TODO.md`.
-- The dashboard's **built-in Report charts are AnAge-specific**; for your own data, use
-  the **Ask** tab and the **AI chart builder** (Report → Customize), which are generic.
+**Multi-table datasets** are supported — declare a `tables:` list instead of a single
+`source`/`table`, and the engine loops ingest/profile over them, **derives the
+relationships** between them, installs a staging model per table, and (with a key)
+proposes **join marts** across the inferred relationships:
+
+```yaml
+name: shop
+tables:
+  - {source: data/customers.csv, table: customers}
+  - {source: data/orders.csv,    table: orders}
+```
+
+```bash
+python run.py load shop && python run.py profile shop   # derives customers→orders [1:many]
+python run.py scaffold shop --write                     # installs both staging models + join-mart proposals
+```
+
+**Multiple datasets coexist** in the one warehouse file, each in its **own schemas** —
+`<dataset>_raw` / `<dataset>_staging` / `<dataset>_marts`. So AnAge lives in `anage_marts`
+etc. and a second dataset never touches it. The dashboard's **dataset selector** scopes
+the Report, the chat's grounding, and model-building to one dataset at a time (AnAge gets
+its curated charts; every other dataset gets an **auto-report** + the AI chart builder).
+
+**Even identical table names across datasets are fine.** dbt requires globally-unique
+*model names*, so each model's node name is dataset-prefixed (`anage__stg_anage`) while a
+dbt `alias` keeps the warehouse relation clean (`anage_staging.stg_anage`). Two datasets can
+both have an `orders` table — they build as `north__stg_orders` / `south__stg_orders` into
+`north_staging.stg_orders` / `south_staging.stg_orders` with no collision. Refs use the
+prefixed node names; everything querying the warehouse sees the clean relation.
 
 ---
 
@@ -283,6 +307,10 @@ Two curated marts (`dbt_project/models/marts/`):
 - ✅ **4.** Orchestration agent (run / monitor / explain, with `--break` demo)
 - ✅ **5.** NL→SQL query agent over the marts (dynamic schema, self-correcting)
 - ✅ **6.** In-app chat (dashboard Ask tab) + **build-a-model-from-chat** with view/build governance
+- ✅ **7.** Multi-table datasets (looped ingest/profile, derived relationships, join-mart
+  scaffolding) + a **dataset selector** that scopes the Report/Ask/Build to one dataset
+- ✅ **8.** Per-dataset schema namespacing (`<dataset>_raw/_staging/_marts`) + dataset-prefixed
+  model names with `alias` — multiple datasets coexist in one warehouse, even sharing table names
 
 ## Decisions taken (PRD §11 open questions)
 

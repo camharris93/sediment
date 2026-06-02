@@ -1,7 +1,7 @@
 version: 2
 
 models:
-  - name: stg_anage
+  - name: anage__stg_anage
     description: >
       Cleaned, snake_cased, typed AnAge records — one row per species (HAGRID).
       The 1:1 staging contract: rename + cast + a derived binomial, no semantics.

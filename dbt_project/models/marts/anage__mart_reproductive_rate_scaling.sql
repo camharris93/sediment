@@ -2,6 +2,7 @@
 -- Promoted from an NL->SQL chat answer. REVIEW before committing.
 -- Question: how does reporductive rate scale with longevity
 -- Rationale: how does reporductive rate scale with longevity
+{{ config(schema='anage_marts', alias='mart_reproductive_rate_scaling') }}
 
 SELECT
     hagrid,
@@ -14,7 +15,7 @@ SELECT
     interbirth_interval_days,
     female_maturity_days,
     adult_weight_g
-FROM {{ ref('stg_anage') }}
+FROM {{ ref('anage__stg_anage') }}
 WHERE
     max_longevity_yrs IS NOT NULL
     AND (

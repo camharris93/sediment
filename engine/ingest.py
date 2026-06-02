@@ -40,11 +40,11 @@ def _reader_sql(path: Path, delimiter: str | None) -> str:
     return f"read_csv('{p}', {', '.join(opts)})"
 
 
-def _maybe_extract_from_zip(cfg: DatasetConfig, src: Path) -> Path:
-    """If the resolved source is a .zip and config names a member, extract it."""
+def _maybe_extract_from_zip(src: Path, member: str | None) -> Path:
+    """If the resolved source is a .zip, extract the named member (or the first
+    data-looking file)."""
     if src.suffix.lower() != ".zip":
         return src
-    member = cfg.raw_glob
     with zipfile.ZipFile(src) as zf:
         names = zf.namelist()
         if member is None:
@@ -62,37 +62,52 @@ def ingest_file(
     file_path: Path,
     table: str,
     *,
+    schema: str = "raw",
     delimiter: str | None = None,
     warehouse: Path = WAREHOUSE_PATH,
 ) -> int:
-    """Land one file into `raw.<table>`. Returns the row count. Replaces any
-    existing table of that name so re-runs are idempotent."""
+    """Land one file into `<schema>.<table>`. Returns the row count. Replaces any
+    existing table of that name so re-runs are idempotent. The schema is the
+    dataset's raw landing schema (`<dataset>_raw`); the generic `--file` mode
+    defaults to `raw`."""
     if not file_path.exists():
         raise FileNotFoundError(f"Source file not found: {file_path}")
 
     reader = _reader_sql(file_path, delimiter)
     con = duckdb.connect(str(warehouse))
     try:
-        con.execute("CREATE SCHEMA IF NOT EXISTS raw;")
-        con.execute(f'CREATE OR REPLACE TABLE raw."{table}" AS SELECT * FROM {reader};')
-        (n,) = con.execute(f'SELECT COUNT(*) FROM raw."{table}";').fetchone()
+        con.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}";')
+        con.execute(f'CREATE OR REPLACE TABLE "{schema}"."{table}" AS SELECT * FROM {reader};')
+        (n,) = con.execute(f'SELECT COUNT(*) FROM "{schema}"."{table}";').fetchone()
         (ncols,) = con.execute(
             "SELECT COUNT(*) FROM information_schema.columns "
-            "WHERE table_schema='raw' AND table_name=?;",
-            [table],
+            "WHERE table_schema=? AND table_name=?;",
+            [schema, table],
         ).fetchone()
     finally:
         con.close()
-    print(f"  [ok] raw.{table}: {n:,} rows x {ncols} columns  <-  {file_path.name}")
+    print(f"  [ok] {schema}.{table}: {n:,} rows x {ncols} columns  <-  {file_path.name}")
     return int(n)
 
 
+def raw_schema(dataset: str) -> str:
+    """The per-dataset raw landing schema. Namespacing by dataset keeps two
+    datasets' same-named tables from colliding in the one warehouse file."""
+    return f"{dataset}_raw"
+
+
 def ingest_dataset(name: str, *, warehouse: Path = WAREHOUSE_PATH) -> int:
+    """Ingest every table the dataset declares into `<name>_raw`. Returns total rows."""
     cfg = load_dataset_config(name)
-    src = cfg.resolve_source()
-    src = _maybe_extract_from_zip(cfg, src)
-    print(f"Ingesting dataset '{cfg.name}' -> raw.{cfg.table}")
-    return ingest_file(src, cfg.table, delimiter=cfg.delimiter, warehouse=warehouse)
+    schema = raw_schema(cfg.name)
+    label = f"'{cfg.name}'" + (f" ({len(cfg.tables)} tables)" if cfg.is_multi_table else "")
+    print(f"Ingesting dataset {label} -> schema {schema}")
+    total = 0
+    for spec in cfg.tables:
+        src = cfg.resolve_source(spec)
+        src = _maybe_extract_from_zip(src, spec.raw_glob)
+        total += ingest_file(src, spec.table, schema=schema, delimiter=spec.delimiter, warehouse=warehouse)
+    return total
 
 
 def main(argv: list[str] | None = None) -> int:

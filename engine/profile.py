@@ -145,11 +145,59 @@ def profile_table(
     )
 
 
-def profile_dataset(name: str, *, warehouse: Path = WAREHOUSE_PATH) -> TableProfile:
-    cfg = load_dataset_config(name)
-    prof = profile_table("raw", cfg.table, dataset=cfg.name, warehouse=warehouse)
-    payload = asdict(prof)
+_KEY_NAME_RE = __import__("re").compile(r"(^|_)(id|key|code|no)($|_)|_id$|^id$", 2)
 
+
+def infer_relationships(tables: list[TableProfile]) -> list[dict]:
+    """Lightweight cross-table relationship inference for the profile: a shared,
+    key-shaped column that is a candidate key on ONE side and present on another
+    is a 1:many (parent = the unique side). Both unique → 1:1. The query agent
+    re-derives this from the warehouse too; this surfaces it at profile time so the
+    scaffolder can propose join marts."""
+    rels: list[dict] = []
+    # column_name -> [(table_name, is_key)]
+    index: dict[str, list[tuple[str, bool]]] = {}
+    for t in tables:
+        for c in t.columns:
+            if not _KEY_NAME_RE.search(c.name):
+                continue
+            index.setdefault(c.name.lower(), []).append((t.table, c.is_candidate_key))
+    from itertools import combinations
+    seen = set()
+    for col, entries in index.items():
+        if len(entries) < 2:
+            continue
+        for (ta, ka), (tb, kb) in combinations(entries, 2):
+            key = tuple(sorted([ta, tb]) + [col])
+            if key in seen:
+                continue
+            seen.add(key)
+            if ka and kb:
+                rels.append({"parent": ta, "child": tb, "column": col, "cardinality": "1:1"})
+            elif ka:
+                rels.append({"parent": ta, "child": tb, "column": col, "cardinality": "1:many"})
+            elif kb:
+                rels.append({"parent": tb, "child": ta, "column": col, "cardinality": "1:many"})
+            else:
+                p, c = sorted([ta, tb])
+                rels.append({"parent": p, "child": c, "column": col, "cardinality": "many:many"})
+    return rels
+
+
+def profile_dataset(name: str, *, warehouse: Path = WAREHOUSE_PATH) -> dict:
+    from .ingest import raw_schema
+    cfg = load_dataset_config(name)
+    schema = raw_schema(cfg.name)
+    tables = [profile_table(schema, spec.table, dataset=cfg.name, warehouse=warehouse)
+              for spec in cfg.tables]
+    relationships = infer_relationships(tables) if len(tables) > 1 else []
+
+    payload = {
+        "dataset": cfg.name,
+        "profiled_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "tables": [asdict(t) for t in tables],
+        "relationships": relationships,
+    }
     # Write profile.json next to the dataset (the scaffold step reads it there)
     # and a convenience copy at the repo root.
     out_paths = [cfg.dir / "profile.json", warehouse.parent / "profile.json"]
@@ -157,11 +205,16 @@ def profile_dataset(name: str, *, warehouse: Path = WAREHOUSE_PATH) -> TableProf
     for p in out_paths:
         p.write_text(text, encoding="utf-8")
 
-    keys = [c.name for c in prof.columns if c.is_candidate_key]
-    print(f"  [ok] profiled raw.{cfg.table}: {prof.row_count:,} rows x {prof.column_count} cols")
-    print(f"    candidate key(s): {', '.join(keys) if keys else '(none derived)'}")
+    for t in tables:
+        keys = [c.name for c in t.columns if c.is_candidate_key]
+        print(f"  [ok] profiled raw.{t.table}: {t.row_count:,} rows x {t.column_count} cols"
+              f"  (keys: {', '.join(keys) if keys else 'none'})")
+    if relationships:
+        print(f"    derived {len(relationships)} cross-table relationship(s):")
+        for r in relationships:
+            print(f"      - {r['parent']} -> {r['child']} on {r['column']} [{r['cardinality']}]")
     print(f"    -> {out_paths[0]}")
-    return prof
+    return payload
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -1,10 +1,11 @@
 -- Mart: lifespan statistics rolled up by taxonomic class.
 -- Human-curated semantics: "what does longevity look like across the major
 -- animal classes, and how well-sampled is each?" One row per class.
+{{ config(schema='anage_marts', alias='mart_longevity_by_class') }}
 
 with species as (
     select *
-    from {{ ref('stg_anage') }}
+    from {{ ref('anage__stg_anage') }}
     where kingdom = 'Animalia'
 ),
 

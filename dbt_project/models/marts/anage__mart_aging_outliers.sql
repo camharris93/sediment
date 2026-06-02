@@ -7,6 +7,7 @@
 --
 -- The fit uses DuckDB's built-in regr_slope / regr_intercept aggregates — the
 -- regression itself is deterministic SQL, no library, no AI.
+{{ config(schema='anage_marts', alias='mart_aging_outliers') }}
 
 with base as (
     select
@@ -15,7 +16,7 @@ with base as (
         max_longevity_yrs,
         ln(adult_weight_g)    as ln_mass,
         ln(max_longevity_yrs) as ln_life
-    from {{ ref('stg_anage') }}
+    from {{ ref('anage__stg_anage') }}
     where kingdom = 'Animalia'
       and adult_weight_g > 0
       and max_longevity_yrs > 0

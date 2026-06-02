@@ -16,9 +16,10 @@ from typing import Any
 
 from .warehouse import DuckDBWarehouse
 
-# Schemas the query agent is allowed to read. Marts are the curated answer
-# surface; staging is the clean per-row contract that powers detailed questions.
-GROUNDED_SCHEMAS = ["marts", "staging"]
+# The query agent reads a dataset's marts (the curated answer surface) and staging
+# (the clean per-row contract). Schemas are per-dataset: <dataset>_marts / _staging.
+def schemas_for_dataset(dataset: str) -> list[str]:
+    return [f"{dataset}_marts", f"{dataset}_staging"]
 
 _KEY_NAME_RE = re.compile(r"(^|_)(id|key|code|hagrid|rank|name)($|_)|_id$|^id$", re.IGNORECASE)
 _NUMERIC = {"TINYINT", "SMALLINT", "INTEGER", "BIGINT", "HUGEINT", "FLOAT", "DOUBLE",
@@ -148,18 +149,32 @@ def _infer_relationships(tables: list[TableInfo]) -> list[Relationship]:
     return rels
 
 
-def build_grounding_context(schemas: list[str] | None = None) -> GroundingContext:
-    schemas = schemas or GROUNDED_SCHEMAS
+def _discover_schemas(con) -> list[str]:
+    """All per-dataset marts/staging schemas in the warehouse."""
+    rows = con.execute(
+        "SELECT schema_name FROM information_schema.schemata "
+        "WHERE schema_name LIKE '%\\_marts' ESCAPE '\\' "
+        "   OR schema_name LIKE '%\\_staging' ESCAPE '\\'"
+    ).fetchall()
+    return [r[0] for r in rows]
+
+
+def build_grounding_context(dataset: str | None = None,
+                            schemas: list[str] | None = None) -> GroundingContext:
+    """Ground one dataset's schemas (`<dataset>_marts` + `<dataset>_staging`) when
+    `dataset` is given, else every dataset's marts/staging schemas."""
     wh = DuckDBWarehouse()
     con = wh._connect()
     tables: list[TableInfo] = []
     try:
+        if schemas is None:
+            schemas = schemas_for_dataset(dataset) if dataset else _discover_schemas(con)
         placeholders = ",".join("?" for _ in schemas)
         rows = con.execute(
             f"SELECT table_schema, table_name FROM information_schema.tables "
             f"WHERE table_schema IN ({placeholders}) ORDER BY table_schema, table_name",
             schemas,
-        ).fetchall()
+        ).fetchall() if schemas else []
         for sch, tbl in rows:
             fq = f"{_q(sch)}.{_q(tbl)}"
             (rc,) = con.execute(f"SELECT COUNT(*) FROM {fq}").fetchone()

@@ -1,7 +1,7 @@
 version: 2
 
 models:
-  - name: mart_longevity_by_class
+  - name: anage__mart_longevity_by_class
     description: >
       Lifespan statistics by taxonomic class (Animalia). One row per class with
       species counts, average/median/max longevity, and average adult weight.
@@ -18,7 +18,7 @@ models:
       - name: avg_longevity_yrs
         description: "Mean maximum longevity across species in the class with a longevity record."
 
-  - name: mart_aging_outliers
+  - name: anage__mart_aging_outliers
     description: >
       Species ranked by how far their actual longevity beats the body-size→lifespan
       power law (fit in log-log space). overperformer_rank = 1 is the most

@@ -39,28 +39,63 @@ if _DOTENV:
 # Dataset config — the per-dataset contract (datasets/<name>/config.yml)
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _norm_delim(delim):
+    # A delimiter may arrive as the literal string "\\t"; normalize common escapes.
+    if isinstance(delim, str):
+        return delim.encode("utf-8").decode("unicode_escape")
+    return delim
+
+
+@dataclass
+class TableSpec:
+    """One source file → one raw table. A dataset has one or more of these."""
+    source: str                      # path (relative to the dataset dir) or URL
+    table: str                       # raw table name to land it as: raw.<table>
+    delimiter: str | None = None     # e.g. "\t"; None → auto-sniff
+    raw_glob: str | None = None      # optional: member to extract from a zip
+
+
 @dataclass
 class DatasetConfig:
     """The human-authored contract for one dataset.
 
-    Only `name`, `source`, and `table` are required — everything else is the
-    automatable engine's job. `delimiter`/`columns` are passthrough hints for
-    the generic ingester when a file needs them (e.g. AnAge is tab-delimited)."""
+    A dataset declares one OR MORE source tables. Single-table form
+    (`source:`/`table:` at top level) and multi-table form (a `tables:` list)
+    are both supported; both normalize to `self.tables` (a list of TableSpec)."""
     name: str
-    source: str                      # path (relative to the dataset dir) or URL
-    table: str                       # raw table name to land it as: raw.<table>
-    delimiter: str | None = None     # e.g. "\t" for AnAge; None → auto-sniff
+    tables: list[TableSpec]
     description: str = ""
-    download_url: str | None = None  # if set, `make download` fetches it
-    raw_glob: str | None = None      # optional: file to extract from a zip
+    download_url: str | None = None  # dataset-level fetch (single-source datasets)
 
     @property
     def dir(self) -> Path:
         return DATASETS_DIR / self.name
 
-    def resolve_source(self) -> Path:
-        p = Path(self.source)
-        return p if p.is_absolute() else (self.dir / self.source)
+    # ── Back-compat single-table accessors (first table) ──────────────────
+    @property
+    def table(self) -> str:
+        return self.tables[0].table
+
+    @property
+    def source(self) -> str:
+        return self.tables[0].source
+
+    @property
+    def delimiter(self) -> str | None:
+        return self.tables[0].delimiter
+
+    @property
+    def raw_glob(self) -> str | None:
+        return self.tables[0].raw_glob
+
+    @property
+    def is_multi_table(self) -> bool:
+        return len(self.tables) > 1
+
+    def resolve_source(self, spec: "TableSpec | None" = None) -> Path:
+        spec = spec or self.tables[0]
+        p = Path(spec.source)
+        return p if p.is_absolute() else (self.dir / spec.source)
 
 
 def load_dataset_config(name: str) -> DatasetConfig:
@@ -68,21 +103,30 @@ def load_dataset_config(name: str) -> DatasetConfig:
     if not cfg_path.exists():
         raise FileNotFoundError(
             f"No dataset config at {cfg_path}. A dataset folder needs a config.yml "
-            "declaring at least: name, source, table."
+            "declaring at least one source: either `source:`/`table:` or a `tables:` list."
         )
     raw = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
-    # `delimiter` may arrive as the literal string "\\t"; normalize common escapes.
-    delim = raw.get("delimiter")
-    if isinstance(delim, str):
-        delim = delim.encode("utf-8").decode("unicode_escape")
+
+    specs: list[TableSpec] = []
+    if raw.get("tables"):
+        for t in raw["tables"]:
+            specs.append(TableSpec(
+                source=t["source"], table=t["table"],
+                delimiter=_norm_delim(t.get("delimiter")),
+                raw_glob=t.get("raw_glob"),
+            ))
+    else:
+        specs.append(TableSpec(
+            source=raw["source"], table=raw["table"],
+            delimiter=_norm_delim(raw.get("delimiter")),
+            raw_glob=raw.get("raw_glob"),
+        ))
+
     return DatasetConfig(
         name=raw.get("name", name),
-        source=raw["source"],
-        table=raw["table"],
-        delimiter=delim,
+        tables=specs,
         description=raw.get("description", ""),
         download_url=raw.get("download_url"),
-        raw_glob=raw.get("raw_glob"),
     )
 
 

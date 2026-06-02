@@ -2,8 +2,10 @@
 -- binomial name, and junk-row filtering. NO business logic — that lives in the
 -- marts. This layer is the "clean, typed, tested" contract everything reads.
 
+{{ config(schema='anage_staging', alias='stg_anage') }}
+
 with source as (
-    select * from {{ source('raw', 'anage') }}
+    select * from {{ source('anage', 'anage') }}
 ),
 
 renamed as (
