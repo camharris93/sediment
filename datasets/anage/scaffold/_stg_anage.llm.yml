@@ -1,0 +1,140 @@
+version: 2
+
+models:
+  - name: stg_anage
+    description: >
+      Staged records from the AnAge database of animal ageing and life history.
+      One row per species entry, identified by hagrid (the AnAge unique ID).
+      Rows flagged as 'questionable' data quality are excluded at this layer.
+      Many life-history columns are sparsely populated; see null_rate notes.
+    columns:
+      - name: hagrid
+        description: AnAge unique identifier for the species record (zero-padded string).
+        tests:
+          - not_null
+          - unique
+
+      - name: scientific_name
+        description: Derived binomial name (Genus + Species). Not guaranteed unique across all entries (subspecies/synonyms may share a binomial).
+
+      - name: common_name
+        description: Common English name of the species.
+        tests:
+          - not_null
+
+      - name: kingdom
+        description: Taxonomic kingdom.
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Animalia', 'Fungi', 'Plantae', 'Monera']
+
+      - name: phylum
+        description: Taxonomic phylum.
+        tests:
+          - not_null
+
+      - name: class
+        description: Taxonomic class.
+        tests:
+          - not_null
+
+      - name: tax_order
+        description: Taxonomic order (renamed from ORDER to avoid SQL reserved word conflict).
+        tests:
+          - not_null
+
+      - name: family
+        description: Taxonomic family.
+        tests:
+          - not_null
+
+      - name: genus
+        description: Taxonomic genus.
+        tests:
+          - not_null
+
+      - name: species
+        description: Taxonomic species epithet.
+        tests:
+          - not_null
+
+      - name: female_maturity_days
+        description: Age at female sexual maturity in days. ~47% null.
+
+      - name: male_maturity_days
+        description: Age at male sexual maturity in days. ~59% null.
+
+      - name: gestation_incubation_days
+        description: Gestation or incubation period in days. ~61% null.
+
+      - name: weaning_days
+        description: Weaning age in days. ~83% null.
+
+      - name: interbirth_interval_days
+        description: Inter-litter or interbirth interval in days. ~84% null.
+
+      - name: litter_clutch_size
+        description: Mean litter or clutch size (offspring per reproductive event). ~55% null.
+
+      - name: litters_clutches_per_year
+        description: Mean number of litters or clutches produced per year. ~72% null.
+
+      - name: birth_weight_g
+        description: Birth weight in grams. ~74% null.
+
+      - name: weaning_weight_g
+        description: Weaning weight in grams. ~92% null.
+
+      - name: adult_weight_g
+        description: Adult body weight in grams. Most-populated weight column (~79% non-null).
+
+      - name: growth_rate_per_day
+        description: Intrinsic growth rate (1/days). ~88% null.
+
+      - name: maximum_longevity_yrs
+        description: Maximum recorded longevity in years. ~89% non-null — key column for ageing analyses.
+
+      - name: initial_mortality_rate_per_yr
+        description: Gompertz IMR parameter (per year). ~99% null — use only for specialist analyses.
+
+      - name: mortality_rate_doubling_time_yrs
+        description: Gompertz MRDT parameter (years). ~99% null — paired with IMR.
+
+      - name: metabolic_rate_w
+        description: Basal metabolic rate in Watts. ~14% populated; paired with body_mass_for_metabolic_g.
+
+      - name: body_mass_for_metabolic_g
+        description: Body mass (g) used for the metabolic rate measurement. May differ from adult_weight_g.
+
+      - name: body_temperature_k
+        description: Body temperature in Kelvin at which metabolic rate was measured. ~11% populated.
+
+      - name: specimen_origin
+        description: Whether the longevity record comes from a wild or captive individual.
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['wild', 'captivity', 'unknown']
+
+      - name: sample_size
+        description: Qualitative sample size category supporting the life-history estimates.
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['tiny', 'small', 'medium', 'large', 'huge']
+
+      - name: data_quality
+        description: >-
+          Data quality flag assigned by AnAge curators. 'questionable' rows are
+          filtered out in staging. Remaining values: acceptable, low, high.
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['acceptable', 'low', 'high']
+
+      - name: source_ref_id
+        description: Primary source reference ID for the longevity record. ~12% null.
+
+      - name: references_raw
+        description: Comma-separated list of all reference IDs used for this record.

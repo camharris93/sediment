@@ -1,0 +1,12 @@
+# dbt connection profile. The whole "warehouse" is one local DuckDB file at the
+# repo root — no server, no cloud, no account. `make up` sets DBT_PROFILES_DIR to
+# this folder so dbt finds this file.
+sediment:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      # Relative to this file's directory (dbt_project/), so ../ is the repo root.
+      path: "../warehouse.duckdb"
+      schema: main
+      threads: 4

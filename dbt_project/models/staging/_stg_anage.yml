@@ -1,0 +1,23 @@
+version: 2
+
+models:
+  - name: stg_anage
+    description: >
+      Cleaned, snake_cased, typed AnAge records — one row per species (HAGRID).
+      The 1:1 staging contract: rename + cast + a derived binomial, no semantics.
+    columns:
+      - name: hagrid
+        description: "Stable AnAge species identifier. Primary key of this layer."
+        data_tests:
+          - not_null
+          - unique
+      - name: kingdom
+        description: "Taxonomic kingdom (always present after junk filtering)."
+        data_tests:
+          - not_null
+      - name: binomial
+        description: "Genus + species, e.g. 'Homo sapiens'."
+      - name: max_longevity_yrs
+        description: "Maximum recorded longevity in years — the headline measure."
+      - name: adult_weight_g
+        description: "Adult body weight in grams — the body-size measure used by the outlier mart."

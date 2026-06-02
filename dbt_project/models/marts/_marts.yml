@@ -1,0 +1,40 @@
+version: 2
+
+models:
+  - name: mart_longevity_by_class
+    description: >
+      Lifespan statistics by taxonomic class (Animalia). One row per class with
+      species counts, average/median/max longevity, and average adult weight.
+    columns:
+      - name: class
+        description: "Taxonomic class — the grain of this mart."
+        data_tests:
+          - not_null
+          - unique
+      - name: n_species
+        description: "Number of species in the class."
+        data_tests:
+          - not_null
+      - name: avg_longevity_yrs
+        description: "Mean maximum longevity across species in the class with a longevity record."
+
+  - name: mart_aging_outliers
+    description: >
+      Species ranked by how far their actual longevity beats the body-size→lifespan
+      power law (fit in log-log space). overperformer_rank = 1 is the most
+      "lives-long-for-its-size" species. One row per species.
+    columns:
+      - name: hagrid
+        description: "AnAge species id — the grain of this mart."
+        data_tests:
+          - not_null
+          - unique
+      - name: overperformer_rank
+        description: "1 = longest-lived relative to size-implied prediction."
+        data_tests:
+          - not_null
+          - unique
+      - name: longevity_ratio
+        description: "actual / size-predicted longevity. >1 over-performs, <1 under-performs."
+        data_tests:
+          - not_null

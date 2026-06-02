@@ -1,0 +1,22 @@
+# ─────────────────────────────────────────────────────────────────────────
+# AnAge — The Animal Ageing & Longevity Database (reference implementation).
+#
+# This file is the entire human-authored "contract" for the dataset. The engine
+# (ingest → profile → scaffold → orchestrate → query) reads it and does the rest.
+# Drop a sibling folder with its own config.yml to onboard any other dataset.
+# ─────────────────────────────────────────────────────────────────────────
+
+name: anage
+description: >
+  Quantitative ageing data across ~4,600 species — maximum longevity, body mass,
+  metabolic rate, maturity, and more. Includes species that appear not to age.
+
+# Where the raw file comes from. `make download` fetches this zip; ingest pulls
+# the named member out of it. Already-downloaded files are reused.
+download_url: https://genomics.senescence.info/species/dataset.zip
+source: data/dataset.zip
+raw_glob: anage_data.txt
+
+# Landed verbatim as raw.anage. AnAge ships tab-delimited.
+table: anage
+delimiter: "\t"

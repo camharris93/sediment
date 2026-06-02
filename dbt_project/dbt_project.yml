@@ -1,0 +1,25 @@
+name: sediment
+version: "0.1.0"
+config-version: 2
+
+profile: sediment
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+# raw → staging → marts, all in the one DuckDB file. Staging is 1:1 with source
+# (views are cheap and always fresh); marts are materialized tables the dashboard
+# and query agent read.
+models:
+  sediment:
+    staging:
+      +materialized: view
+      +schema: staging
+    marts:
+      +materialized: table
+      +schema: marts

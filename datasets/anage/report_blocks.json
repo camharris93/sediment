@@ -1,0 +1,18 @@
+[
+  {
+    "id": "block_1",
+    "title": "Repro Rate Matrix",
+    "sql": "select * from marts.mart_reproductive_rate_scaling limit 1000",
+    "spec": {
+      "chart_type": "scatter",
+      "x": "max_longevity_yrs",
+      "y": "litters_per_year",
+      "series": [],
+      "color": "class",
+      "title": "Reproductive Rate vs. Longevity",
+      "log_x": false,
+      "log_y": false,
+      "reasoning": "Scatter plot reveals the relationship between species lifespan and reproductive rate, colored by taxonomic class to show patterns across animal groups."
+    }
+  }
+]

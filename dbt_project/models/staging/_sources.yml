@@ -1,0 +1,13 @@
+version: 2
+
+# The raw landing zone written by `engine/ingest.py`. dbt does not load this —
+# the generic ingester does — but declaring it as a source gives us lineage from
+# the file all the way to the marts in `dbt docs`. New datasets append a table
+# entry here automatically via `scaffold --write`.
+sources:
+  - name: raw
+    schema: raw
+    description: "Untouched landing tables — one per ingested file, types auto-inferred by DuckDB."
+    tables:
+      - name: anage
+        description: "AnAge animal ageing & longevity records, exactly as downloaded (tab-delimited)."
