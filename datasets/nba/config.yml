@@ -1,0 +1,7 @@
+name: nba
+description: NBA box scores + schedule — player/team boxscores joined to the games index.
+tables:
+  - {source: data/games_index.csv,      table: games_index}
+  - {source: data/games_schedule.csv,   table: games_schedule}
+  - {source: data/team_boxscores.csv,   table: team_boxscores}
+  - {source: data/player_boxscores.csv, table: player_boxscores}

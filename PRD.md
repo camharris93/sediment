@@ -20,18 +20,17 @@ One command (`make up`) clones-and-runs the entire pipeline with no cloud accoun
 ## 2. Goals & Non-Goals
 
 ### Goals
-1. Demonstrate end-to-end analytics-engineering ownership: ingestion through dashboard, tested and documented.
+1. Demonstrate end-to-end analytics-engineering pipeline: ingestion through dashboard, tested and documented.
 2. Be genuinely dataset-agnostic for the automatable layers — drop in any CSV/Parquet/JSON and get a clean, typed, tested staging layer.
 3. Use AI where it adds value (build-time scaffolding, run-time orchestration/monitoring, natural-language consumption) and demonstrate the judgment to keep it *out* of the deterministic core.
 4. Be fully reproducible: one command, runs offline, identical result on any clone.
-5. Serve as a portfolio artifact that reads as a *framework/product*, not a one-off analysis.
+5. Serve as a artifact that reads as a *framework/product*, not a one-off analysis.
 
 ### Non-Goals
 - Not a hosted SaaS product (no multi-tenant infra, no auth, no billing).
 - Not a replacement for dbt Cloud / Fivetran / a real orchestrator at scale.
 - No streaming, no multi-GPU, no distributed compute.
 - The framework will **not** auto-generate mart semantics without human curation — this is a deliberate design stance, not a limitation to fix.
-- Not attempting Option C (full config-driven semantic-layer codegen) in v1; architected to grow toward it later.
 
 ---
 

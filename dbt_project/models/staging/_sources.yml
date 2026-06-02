@@ -1,13 +1,22 @@
+# dbt sources — per-dataset raw landing zones written by engine/ingest.py.
+# Managed by `scaffold --write`; edit descriptions freely.
 version: 2
-
-# Per-dataset raw landing zones written by `engine/ingest.py`. Each dataset gets
-# its OWN source block (source name = dataset, schema = <dataset>_raw), so two
-# datasets' same-named tables never collide. New datasets append a block here
-# automatically via `scaffold --write`.
 sources:
+- name: anage
+  schema: anage_raw
+  description: Raw landing tables for the anage dataset (engine/ingest.py).
+  tables:
   - name: anage
-    schema: anage_raw
-    description: "Raw landing tables for the anage dataset (engine/ingest.py)."
-    tables:
-      - name: anage
-        description: "AnAge animal ageing & longevity records, exactly as downloaded (tab-delimited)."
+    description: AnAge animal ageing & longevity records, exactly as downloaded (tab-delimited).
+- name: nba
+  schema: nba_raw
+  description: Raw landing tables for the nba dataset (engine/ingest.py).
+  tables:
+  - name: games_index
+    description: Raw games_index table.
+  - name: games_schedule
+    description: Raw games_schedule table.
+  - name: team_boxscores
+    description: Raw team_boxscores table.
+  - name: player_boxscores
+    description: Raw player_boxscores table.
