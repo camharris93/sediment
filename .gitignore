@@ -4,19 +4,25 @@
 
 # Generated artifacts
 profile.json
-datasets/*/profile.json
 .cache/
 
-# ── Ship the recipe, not the data ──────────────────────────────────────────
-# Raw dataset files stay LOCAL: a push carries the pipeline (config.yml, the dbt
-# staging/mart models, _sources.yml, tests) but NOT the bytes. A teammate clones,
-# drops their own file into datasets/<name>/data/, and runs `up`.
-datasets/*/data/*
-# Exception: the AnAge reference data ships so the worked example runs offline
-# (it also re-downloads from its URL, so this is belt-and-suspenders)...
-!datasets/anage/data/*
-# ...but never the re-downloadable zip.
+# ── AnAge is the ONLY dataset that ships ────────────────────────────────────
+# This repo is AnAge-only by design. Every OTHER dataset you onboard locally —
+# its config, data, generated models — stays on your machine and is never
+# committed. (To share a different dataset, that's a separate repo.)
+datasets/*
+!datasets/anage
+# Within AnAge: keep config + source data (so the worked example runs offline),
+# drop derived artifacts and the re-downloadable zip.
+datasets/anage/profile.json
 datasets/anage/data/*.zip
+
+# Only AnAge's dbt models are tracked; any other dataset's models (named
+# <dataset>__*) stay local, matching the dataset-isolation above.
+dbt_project/models/staging/*__*
+dbt_project/models/marts/*__*
+!dbt_project/models/staging/anage__*
+!dbt_project/models/marts/anage__*
 
 # dbt
 dbt_project/target/
