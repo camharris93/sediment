@@ -1,8 +1,8 @@
 [
   {
     "id": "block_1",
-    "title": "Repro Rate Matrix",
-    "sql": "select * from marts.mart_reproductive_rate_scaling limit 1000",
+    "title": "Reproductive Rate vs. Longevity",
+    "sql": "select * from anage_marts.mart_reproductive_rate_scaling limit 1000",
     "spec": {
       "chart_type": "scatter",
       "x": "max_longevity_yrs",

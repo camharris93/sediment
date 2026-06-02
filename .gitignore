@@ -13,9 +13,10 @@ profile.json
 datasets/*
 !datasets/anage
 # Within AnAge: keep config + source data (so the worked example runs offline),
-# drop derived artifacts and the re-downloadable zip.
+# drop derived/generated artifacts and the re-downloadable zip.
 datasets/anage/profile.json
 datasets/anage/data/*.zip
+datasets/*/scaffold/
 
 # Only AnAge's dbt models are tracked; any other dataset's models (named
 # <dataset>__*) stay local, matching the dataset-isolation above.
