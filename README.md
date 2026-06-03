@@ -1,5 +1,10 @@
 # sediment — a dataset-agnostic analytics-engineering framework
 
+<img width="2508" height="1284" alt="Screenshot 2026-06-03 081355" src="https://github.com/user-attachments/assets/e88fbd5e-ecd6-4784-81b1-7cbcecb1ecfd" />
+
+
+
+
 Take *any* tabular dataset and run it through a complete modern data stack —
 ingestion → warehouse → transformation → testing → docs → visualization — with AI
 layered at the **build, orchestration, and consumption** seams, and deliberately
@@ -12,11 +17,25 @@ python run.py up          # download → load → profile → dbt run → dbt te
 python run.py dashboard   # open the BI dashboard
 # (with make installed: `make up`, `make dashboard`)
 ```
+<img width="1080" height="932" alt="demo gif" src="https://github.com/user-attachments/assets/ff5621d3-733c-4ee4-b539-425142b8bfac" />
+
+</br>
+
+In the dashboard, the Ask tab takes a plain-English question, grounds it in the live schema, generates DuckDB SQL, and runs it read-only — but only after it clears a layered validation pipeline (L1–L7) that statically checks every column, dry-runs the query before a single row is read, and sanity-checks the result. Each layer lights up pass / retry / fail in a live trace, and every number in the answer traces back to the SQL that produced it. A query that can't be validated fails transparently instead of guessing. From there, a good answer doesn't have to evaporate: promote it into a reviewable dbt model or pin it to the dashboard as a chart — so an ad-hoc question becomes durable, tested infrastructure in a couple of clicks.
+
+<img width="960" height="720" alt="Video Project" src="https://github.com/user-attachments/assets/87726abe-9857-4fe2-ad2b-7a694fe70b58" />
+
 
 The reference dataset is **AnAge** (the Animal Ageing & Longevity Database) — ~4,600
 species. The marts answer questions like *"which animals live far longer than their
 body size predicts?"* (answer: deep-sea rockfish, the olm, tortoises, naked
 mole-rats — and yes, the data backs it up).
+
+
+
+
+
+
 
 ---
 
@@ -229,20 +248,8 @@ a human judgment call.
    L3/L4 failures feed structured violations back to L2 in a bounded **self-correction
    loop**. A query that can't be validated is a *transparent failure*, not a confident
    guess. Available as a CLI (`python run.py ask "…"`) **and built into the dashboard's
-   💬 Ask tab**.
-
-   The Ask tab is a **conversation**, not a one-shot box:
-   - **Follow-ups** — "now just the mammals", "break that down by class". Each turn's
-     result becomes a `turn_N_result` table the next turn can build on (inlined as a CTE).
-   - **Multi-hop** — a planner decomposes a complex question into ordered hops; each hop
-     can query an earlier hop's result; a synthesizer ties them into one answer.
-   - **Build from chat** — "save that as `mart_x`" promotes the last answer into a
-     committable dbt model (conversational synthetics are inlined so it's self-contained),
-     governed by build mode.
-   - **Review from chat** — "review `mart_y`" runs an **AI mart reviewer** that red-teams
-     the SQL against the measured relationships (fan-out, grain, missing tests, divide-by-
-     zero) and returns severity-tagged findings. It complements the scaffolder: one agent
-     *builds*, another *critiques*, a human commits.
+   💬 Ask tab, which renders a live L1→L7 trace** (each layer lights up pass/retry/fail
+   with its intent, SQL, validation detail, and trust badge) as the answer is computed.
 
 4. **Build a model from chat** (`engine/modeling.py` + dashboard 🛠 Build tab) — promote
    a validated chat answer into a dbt model. The chat SQL is rewritten from
@@ -323,8 +330,6 @@ Two curated marts (`dbt_project/models/marts/`):
   scaffolding) + a **dataset selector** that scopes the Report/Ask/Build to one dataset
 - ✅ **8.** Per-dataset schema namespacing (`<dataset>_raw/_staging/_marts`) + dataset-prefixed
   model names with `alias` — multiple datasets coexist in one warehouse, even sharing table names
-- ✅ **9.** Conversational query agent — follow-up memory, multi-hop planning/synthesis, and
-  build-a-model + AI-reviewer **in the chat**
 
 ## Decisions taken (PRD §11 open questions)
 
