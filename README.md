@@ -1,5 +1,17 @@
 # sediment — a dataset-agnostic analytics-engineering framework
 
+[![CI](https://github.com/camharris93/sediment/actions/workflows/ci.yml/badge.svg)](https://github.com/camharris93/sediment/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/camharris93/sediment?sort=semver&color=success)](https://github.com/camharris93/sediment/releases)
+[![License](https://img.shields.io/github/license/camharris93/sediment?color=informational)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
+[![Stars](https://img.shields.io/github/stars/camharris93/sediment?style=flat&logo=github)](https://github.com/camharris93/sediment/stargazers)
+
+![DuckDB](https://img.shields.io/badge/warehouse-DuckDB-FFF000?logo=duckdb&logoColor=black)
+![dbt](https://img.shields.io/badge/transform-dbt-FF694B?logo=dbt&logoColor=white)
+![Streamlit](https://img.shields.io/badge/dashboard-Streamlit-FF4B4B?logo=streamlit&logoColor=white)
+![Claude](https://img.shields.io/badge/AI%20at%20the%20edges-Claude-D97757?logo=anthropic&logoColor=white)
+![Offline](https://img.shields.io/badge/runs-offline-success)
+
 <img width="2508" height="1284" alt="Screenshot 2026-06-03 081355" src="https://github.com/user-attachments/assets/e88fbd5e-ecd6-4784-81b1-7cbcecb1ecfd" />
 
 

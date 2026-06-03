@@ -1,0 +1,29 @@
+name: CI
+
+# Proves the core claim: a fresh clone builds a green, tested pipeline with one
+# command — no cloud, no API key, fully offline (the AnAge data ships in the repo).
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: build + test (reproducibility proof)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Build the whole pipeline + run dbt tests
+        # `up` = load -> profile -> dbt run -> dbt test. Exits non-zero if any
+        # test fails, so a red build means the pipeline is not reproducible.
+        run: python run.py up
