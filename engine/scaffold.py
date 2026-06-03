@@ -215,7 +215,7 @@ def llm_scaffold(profile: dict) -> dict:
     )
     print(f"  [llm] model={usage.model} in={usage.input_tokens} out={usage.output_tokens} "
           f"cache_read={usage.cache_read_input_tokens}")
-    return json.loads(_strip_json(text))
+    return json.loads(_strip_json(text), strict=False)
 
 
 _MULTI_SYSTEM = """\
@@ -258,7 +258,7 @@ def llm_propose_join_marts(profile: dict) -> dict:
     text, usage = complete(system=_MULTI_SYSTEM, user=user,
                            model=get_ai_settings().model_l2, max_tokens=6000)
     print(f"  [llm] model={usage.model} in={usage.input_tokens} out={usage.output_tokens}")
-    return json.loads(_strip_json(text))
+    return json.loads(_strip_json(text), strict=False)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

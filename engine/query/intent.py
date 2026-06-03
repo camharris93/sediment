@@ -58,8 +58,16 @@ Rules:
     ("proxying X with Y because X is not present").
   • Output ONLY the JSON object.
 
+When the question is a FOLLOW-UP that builds on a prior turn (see conversation
+history, if present), resolve the reference: restate it in full, and prefer
+reading from the named prior-result table (e.g. `turn_1_result`) when that's the
+natural thing to build on. Surface how you resolved an ambiguous reference as an
+assumption.
+
 -------- Grounded schema (source of truth) --------
 {schema}
+
+{history}
 """
 
 
@@ -72,16 +80,18 @@ def _strip_json(text: str) -> str:
     return m.group(0) if m else t
 
 
-def derive_intent(question: str, ctx: GroundingContext):
+def derive_intent(question: str, ctx: GroundingContext, *, history: list | None = None):
     from .._llm import complete
     from ..config import get_ai_settings
+    from .conversation import render_history
 
-    system = _SYSTEM.format(schema=to_prompt_summary(ctx))
+    system = _SYSTEM.format(schema=to_prompt_summary(ctx),
+                            history=render_history(history or []))
     text, usage = complete(
         system=system, user=f"Question: {question}",
         model=get_ai_settings().model_l1, max_tokens=1500,
     )
-    payload = json.loads(_strip_json(text))
+    payload = json.loads(_strip_json(text), strict=False)
     intent = Intent(
         restated_question=payload.get("restated_question", question),
         target_tables=payload.get("target_tables") or [],

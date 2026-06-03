@@ -12,7 +12,7 @@ from typing import Any, Callable
 from .dry_run import DryRunReport, dry_run_check
 from .execution import ExecutionOutcome, Provenance, Refusal, guarded_execute
 from .generation import generate_sql
-from .grounding import GroundingContext
+from .grounding import GroundingContext, inline_synthetic_ctes
 from .intent import Intent, derive_intent
 from .plausibility import PlausibilityResult, check_plausibility
 from .static_validation import ValidationResult, Violation, ViolationKind, validate_sql
@@ -84,8 +84,11 @@ def _generate_validated(intent: Intent, ctx: GroundingContext, events, on_event,
             return _GenLoop(False, sql, validation, dry_run_report, attempt)
         _emit(events, on_event, "layer_result", LayerId.L3, **{"pass": True, "attempt": attempt})
 
+        # Inline any synthetic prior-hop/turn tables as CTEs before EXPLAIN. The
+        # user-facing `sql` keeps its readable bare-name refs; this is what runs.
+        executable = inline_synthetic_ctes(sql, ctx)
         _emit(events, on_event, "layer_start", LayerId.L4, attempt=attempt)
-        dry_run_report = dry_run_check(sql)
+        dry_run_report = dry_run_check(executable)
         if not dry_run_report.ok:
             _emit(events, on_event, "validation_fail", LayerId.L4, attempt=attempt,
                   error_summary=dry_run_report.summary)
@@ -103,12 +106,13 @@ def _generate_validated(intent: Intent, ctx: GroundingContext, events, on_event,
 
 def run_to_executed_answer(question: str, ctx: GroundingContext, *,
                            max_retries: int = MAX_RETRIES,
-                           on_event: EventCallback | None = None) -> PipelineResult:
+                           on_event: EventCallback | None = None,
+                           history: list[dict] | None = None) -> PipelineResult:
     events: list[TraceEvent] = []
 
     _emit(events, on_event, "layer_start", LayerId.L1)
     try:
-        intent, _ = derive_intent(question, ctx)
+        intent, _ = derive_intent(question, ctx, history=history)
     except Exception as exc:
         _emit(events, on_event, "validation_fail", LayerId.L1, error=str(exc))
         return PipelineResult("transparent_failure", question, events=events)
@@ -124,7 +128,8 @@ def run_to_executed_answer(question: str, ctx: GroundingContext, *,
                               final_answer=final, attempts=loop.attempts, events=events)
 
     _emit(events, on_event, "layer_start", LayerId.L5)
-    outcome: ExecutionOutcome = guarded_execute(loop.sql or "", loop.dry_run or DryRunReport(ok=False))
+    executable_for_l5 = inline_synthetic_ctes(loop.sql or "", ctx)
+    outcome: ExecutionOutcome = guarded_execute(executable_for_l5, loop.dry_run or DryRunReport(ok=False))
     if not outcome.ok:
         _emit(events, on_event, "validation_fail", LayerId.L5,
               refusal=outcome.refusal.to_dict() if outcome.refusal else {})

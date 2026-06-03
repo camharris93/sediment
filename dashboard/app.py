@@ -107,24 +107,48 @@ _LAYER_NAMES = {"L1": "Intent", "L2": "Generation", "L3": "Static valid.",
 
 
 class LiveTrace:
+    """Hop-aware live trace: shows the transparent L1→L7 pipeline as it runs. For a
+    multi-hop question each hop gets its own group of layer blocks; the plan and
+    hop boundaries are shown so you can see exactly what's happening under the hood."""
     def __init__(self, container):
-        self.c = container
-        self.cur: dict[str, object] = {}
+        self.root = container
+        self.n_hops = 1
+        self.hop_box = None          # current hop's container
+        self.cur: dict[tuple, object] = {}   # (hop_index, layer) -> st.status handle
 
     def __call__(self, ev) -> None:
+        k, p = ev.kind, ev.payload
         layer = ev.layer.value if ev.layer else None
+        hop = p.get("hop_index", 1)
+
+        if k == "plan_proposed":
+            hops = p.get("hops", [])
+            self.n_hops = len(hops)
+            if self.n_hops > 1:
+                self.root.markdown(f"**🧭 Plan — {self.n_hops} hops**")
+                for i, h in enumerate(hops, 1):
+                    self.root.markdown(f"{i}. {h[:90]}")
+            return
+        if k == "hop_start":
+            self.hop_box = self.root.container()
+            if self.n_hops > 1:
+                self.hop_box.markdown(f"**↳ Hop {hop}: {p.get('description','')[:80]}**")
+            return
+        if k == "synthesis":
+            return
         if layer is None:
             return
         name = _LAYER_NAMES.get(layer, layer)
-        if ev.kind == "layer_start":
-            attempt = ev.payload.get("attempt")
+        box = self.hop_box or self.root
+        if k == "layer_start":
+            attempt = p.get("attempt")
             label = f"{layer} · {name}" + (f"   ↻ attempt {attempt}" if attempt and attempt > 1 else "")
-            self.cur[layer] = self.c.status(label, state="running", expanded=False)
-        elif ev.kind in ("layer_result", "validation_fail"):
-            self._finish(layer, name, ev.payload, ok=(ev.kind == "layer_result"))
+            self.cur[(hop, layer)] = box.status(label, state="running", expanded=False)
+        elif k in ("layer_result", "validation_fail"):
+            self._finish(hop, layer, name, p, ok=(k == "layer_result"))
 
-    def _finish(self, layer, name, payload, ok) -> None:
-        h = self.cur.get(layer)
+    def _finish(self, hop, layer, name, payload, ok) -> None:
+        h = self.cur.get((hop, layer))
         if h is None:
             return
         try:
@@ -136,16 +160,23 @@ class LiveTrace:
                     h.markdown("**Assumptions:** " + "; ".join(it["assumptions"]))
             elif layer == "L2" and ok:
                 h.code(payload.get("sql", ""), language="sql")
-            elif layer == "L3" and not ok:
-                for v in payload.get("violations", []):
-                    h.markdown(f"- `{v.get('offending_token','')}` — {v.get('message','')}")
-            elif layer == "L4" and not ok:
-                h.markdown(f"EXPLAIN failed: {payload.get('error_summary','')}")
+            elif layer == "L3":
+                if ok:
+                    h.markdown("Columns & tables resolve against the live schema.")
+                else:
+                    for v in payload.get("violations", []):
+                        h.markdown(f"- `{v.get('offending_token','')}` — {v.get('message','')}")
+            elif layer == "L4":
+                h.markdown("DuckDB planned the query (EXPLAIN passed)." if ok
+                           else f"EXPLAIN failed: {payload.get('error_summary','')}")
             elif layer == "L5" and ok:
                 h.markdown(f"{payload.get('row_count',0)} rows · {payload.get('elapsed_ms',0)} ms")
-            elif layer == "L6" and not ok:
-                for w in payload.get("warnings", []):
-                    h.markdown(f"- ⚠️ {w.get('message','')}")
+            elif layer == "L6":
+                if ok:
+                    h.markdown("No fan-out or value anomalies.")
+                else:
+                    for w in payload.get("warnings", []):
+                        h.markdown(f"- ⚠️ {w.get('message','')}")
             elif layer == "L7" and ok:
                 h.markdown(f"Trust badge: **{payload.get('trust_badge','')}**")
         except Exception:
@@ -318,60 +349,103 @@ with tab_report:
 # ═════════════════════════════════════════════════════════════════════════════
 # ASK  (scoped to the selected dataset)
 # ═════════════════════════════════════════════════════════════════════════════
+def _render_assistant(item: dict) -> None:
+    """Render one stored assistant turn in the conversation."""
+    kind = item["kind"]
+    if kind == "answer":
+        if item.get("plan") and len(item["plan"]) > 1:
+            with st.expander(f"🧭 Plan — {len(item['plan'])} hops", expanded=False):
+                for i, h in enumerate(item["plan"], 1):
+                    st.markdown(f"{i}. {h}")
+        st.write(item.get("text", ""))
+        if item.get("sql"):
+            st.code(item["sql"], language="sql")
+        for w in item.get("warnings", []):
+            st.warning(w)
+        if item.get("rows"):
+            st.dataframe(pd.DataFrame(item["rows"]).head(50), hide_index=True, use_container_width=True)
+        st.caption(f"Trust: {_BADGE.get(item.get('badge'), item.get('badge'))} · "
+                   f"{item.get('attempts', 0)} attempt(s)"
+                   + ("  ·  multi-hop" if item.get("plan") and len(item["plan"]) > 1 else ""))
+    elif kind in ("built", "review", "refused", "error"):
+        icon = {"built": "🛠", "review": "🔎", "refused": "🔒", "error": "⚠️"}.get(kind, "")
+        st.markdown(f"{icon} {item.get('text','')}")
+        for f in item.get("findings", []):
+            sev_icon = {"high": "🔴", "medium": "🟠", "low": "🟡"}.get(f["severity"], "•")
+            st.markdown(f"- {sev_icon} **{f['title']}** — {f['detail']}")
+
+
+def _store_response(resp) -> dict:
+    item = {"kind": resp.kind, "text": resp.text}
+    if resp.kind == "answer" and resp.mh is not None:
+        mh = resp.mh
+        item.update({
+            "sql": mh.sql, "rows": mh.rows, "badge": mh.trust_badge.value,
+            "attempts": mh.attempts,
+            "plan": [h.description for h in mh.plan.hops] if mh.plan else [],
+            "warnings": [w["message"] for h in mh.hops
+                         for w in (h.result.final_answer.plausibility_warnings if h.result.final_answer else [])],
+        })
+    if resp.review is not None:
+        item["findings"] = [{"severity": f.severity, "title": f.title, "detail": f.detail}
+                            for f in resp.review.findings]
+        if resp.kind == "review" and resp.review.summary:
+            item["text"] = resp.review.summary
+    return item
+
+
 with tab_ask:
-    st.caption(f"Ask about **{sel}** in plain English. The agent grounds on this dataset's tables, "
-               "generates DuckDB SQL, validates it, and runs it read-only.")
+    hint = ("Ask, follow up ('now just mammals'), or chain multi-step analysis. In build mode: "
+            "'save that as mart_x', 'review mart_y'." if is_build_mode()
+            else "Ask about the data in plain English; follow-ups work ('now just mammals').")
+    st.caption(f"Conversation over **{sel}**. {hint}")
     if not has_anthropic_key():
         st.warning("The chat needs an Anthropic key. Set `ANTHROPIC_API_KEY` or add a one-line "
                    "`anthropic.txt` at the repo root, then reload.")
     elif not marts and not staging:
         st.info(f"Nothing to query for **{sel}** yet — build its models first.")
     else:
-        if "chat" not in st.session_state:
-            st.session_state.chat = []
-        for turn in st.session_state.chat:
-            with st.chat_message("user"):
-                st.write(turn["q"])
-            with st.chat_message("assistant"):
-                st.write(turn["answer"])
-                if turn.get("sql"):
-                    st.code(turn["sql"], language="sql")
-                if turn.get("rows"):
-                    st.dataframe(pd.DataFrame(turn["rows"]).head(50), hide_index=True, use_container_width=True)
-                st.caption(f"Trust: {_BADGE.get(turn['badge'], turn['badge'])} · {turn['attempts']} attempt(s) · {turn['ms']}ms")
+        from engine.query.conversation import Session
+        from engine.query.agent import handle_message
+        # One Session + display log per dataset (resets when you switch datasets).
+        if st.session_state.get("conv_dataset") != sel:
+            st.session_state.conv_dataset = sel
+            st.session_state.conv_session = Session(dataset=sel)
+            st.session_state.conv_log = []
+        session = st.session_state.conv_session
 
-        q = st.chat_input(f"e.g. ask something about {sel}…")
-        if q:
-            from engine.query.orchestrator import run_to_executed_answer
+        for turn in st.session_state.conv_log:
+            with st.chat_message(turn["role"]):
+                if turn["role"] == "user":
+                    st.write(turn["text"])
+                else:
+                    _render_assistant(turn)
+
+        msg = st.chat_input(f"ask about {sel}…")
+        if msg:
             with st.chat_message("user"):
-                st.write(q)
+                st.write(msg)
+            st.session_state.conv_log.append({"role": "user", "text": msg})
             with st.chat_message("assistant"):
-                trace_box = st.container()
-                trace_box.markdown("**Pipeline**")
-                res = run_to_executed_answer(q, scoped_grounding(sel), on_event=LiveTrace(trace_box))
-                fa = res.final_answer
-                st.markdown("**Answer**")
-                st.write(fa.explanation if fa else "(no answer)")
-                if res.sql:
-                    st.code(res.sql, language="sql")
-                if fa and fa.plausibility_warnings:
-                    for w in fa.plausibility_warnings:
-                        st.warning(w["message"])
-                if res.rows:
-                    st.dataframe(pd.DataFrame(res.rows).head(50), hide_index=True, use_container_width=True)
-                if fa:
-                    st.caption(f"Trust: {_BADGE.get(fa.trust_badge.value, fa.trust_badge.value)} · "
-                               f"{res.attempts} attempt(s) · {fa.elapsed_ms}ms")
-                st.session_state.chat.append({
-                    "q": q, "answer": fa.explanation if fa else "", "sql": res.sql, "rows": res.rows,
-                    "badge": fa.trust_badge.value if fa else "failed", "attempts": res.attempts,
-                    "ms": fa.elapsed_ms if fa else 0, "status": res.status})
-                if res.status == "executed" and res.sql:
-                    st.session_state.last_answer = st.session_state.chat[-1]
-                    if is_build_mode():
-                        if st.button("📈 Chart this in the Report"):
-                            st.session_state.report_seed = {"sql": res.sql, "instruction": q, "title": q[:60]}
-                            st.toast("Seeded Report → Customize. Open the 📊 Report tab.")
+                # The transparent pipeline — every layer of every hop, live.
+                with st.expander("🔬 Under the hood (L1→L7 pipeline)", expanded=True):
+                    trace_box = st.container()
+                resp = handle_message(session, msg, build_mode=is_build_mode(),
+                                      on_event=LiveTrace(trace_box))
+                item = {"role": "assistant", **_store_response(resp)}
+                _render_assistant(item)
+                st.session_state.conv_log.append(item)
+
+                # Make the answer available to the Build tab (self-contained SQL) and
+                # the chart seeder.
+                if resp.kind == "answer" and resp.mh and resp.mh.sql:
+                    from engine.query.grounding import inline_synthetic_ctes
+                    ctx_syn = session.base_ctx().with_synthetic_tables(session.prior_synthetics())
+                    inlined = inline_synthetic_ctes(resp.mh.sql, ctx_syn)
+                    st.session_state.last_answer = {"q": msg, "sql": inlined}
+                    if is_build_mode() and st.button("📈 Chart this in the Report"):
+                        st.session_state.report_seed = {"sql": inlined, "instruction": msg, "title": msg[:60]}
+                        st.toast("Seeded Report → Customize. Open the 📊 Report tab.")
 
 
 # ═════════════════════════════════════════════════════════════════════════════

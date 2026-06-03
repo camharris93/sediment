@@ -158,7 +158,7 @@ def suggest_chart(columns: list[str], sample_rows: list[dict], *,
             text, _ = complete(
                 system=_SYSTEM, user=json.dumps(payload, default=str),
                 model=get_ai_settings().model_l7, max_tokens=400, cache_system=False)
-            spec = ChartSpec.from_dict(json.loads(_strip_json(text)))
+            spec = ChartSpec.from_dict(json.loads(_strip_json(text), strict=False))
         except Exception:
             spec = heuristic_chart(columns, sample_rows)
 

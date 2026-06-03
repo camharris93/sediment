@@ -1,11 +1,11 @@
-"""NL->SQL CLI over the marts. One-shot or interactive.
+"""Conversational NL->SQL CLI over the marts.
 
     python -m engine.query.cli "which animals live longest for their size?"
-    python -m engine.query.cli            # interactive REPL
+    python -m engine.query.cli            # interactive conversation
 
-Prints the layer trace as it runs, then the SQL, the answer, and a trust badge.
-Needs an Anthropic key (the consumption edge is the one place AI is essential);
-the deterministic core never calls it.
+A real conversation: follow up ("now just mammals"), chain multi-step analysis,
+and — in build mode — say "save that as mart_x" or "review mart_y" without leaving
+the chat. Needs an Anthropic key; the deterministic core never calls it.
 """
 from __future__ import annotations
 
@@ -16,67 +16,65 @@ try:
 except Exception:
     pass
 
-from ..config import WAREHOUSE_PATH, active_dataset, has_anthropic_key
-from .grounding import build_grounding_context
-from .orchestrator import run_to_executed_answer
+from ..config import WAREHOUSE_PATH, active_dataset, has_anthropic_key, is_build_mode
+from .agent import handle_message
+from .conversation import Session
 from .trace import TraceEvent
 
-_BADGE_ICON = {
-    "clean": "✅ clean", "self_corrected": "🔧 self-corrected",
-    "flagged": "⚠️  flagged", "refused": "⛔ refused", "failed": "❌ failed",
-}
+_BADGE = {"clean": "[ok] clean", "self_corrected": "[fixed] self-corrected",
+          "flagged": "[!] flagged", "refused": "[x] refused", "failed": "[x] failed"}
 
 
-def _trace_printer() -> "callable":
+def _printer():
     def on_event(ev: TraceEvent) -> None:
-        layer = ev.layer.value if ev.layer else "--"
-        if ev.kind == "layer_start":
-            print(f"  [{layer}] ...", flush=True)
-        elif ev.kind == "layer_result":
-            if ev.layer and ev.layer.value == "L2":
-                print(f"  [{layer}] generated SQL ({ev.payload.get('attempt')})")
-            elif ev.payload.get("pass"):
-                extra = ""
-                if "row_count" in ev.payload:
-                    extra = f" ({ev.payload['row_count']} rows, {ev.payload.get('elapsed_ms',0)}ms)"
-                print(f"  [{layer}] pass{extra}")
-        elif ev.kind == "validation_fail":
-            detail = ev.payload.get("error_summary") or ev.payload.get("error") \
-                or ev.payload.get("violations") or ev.payload.get("warnings") \
-                or ev.payload.get("refusal") or ""
-            print(f"  [{layer}] FAIL: {str(detail)[:160]}")
-        elif ev.kind == "retry":
-            print(f"  [{layer}] -> retry {ev.payload.get('next_attempt')}")
+        k = ev.kind
+        p = ev.payload
+        if k == "plan_proposed":
+            hops = p.get("hops", [])
+            if len(hops) > 1:
+                print(f"  plan: {len(hops)} hops")
+                for i, h in enumerate(hops, 1):
+                    print(f"    {i}. {h[:80]}")
+        elif k == "hop_start":
+            print(f"  -> hop {p.get('hop_index')}: {p.get('description','')[:70]}")
+        elif k == "layer_result" and ev.layer and ev.layer.value == "L5" and p.get("pass"):
+            print(f"     ran: {p.get('row_count',0)} rows")
+        elif k == "validation_fail" and ev.layer:
+            print(f"     [{ev.layer.value}] retrying...")
     return on_event
 
 
-def answer(question: str, ctx=None) -> int:
-    ctx = ctx or build_grounding_context(active_dataset())
-    print(f"\nQ: {question}\n" + "-" * 70)
-    result = run_to_executed_answer(question, ctx, on_event=_trace_printer())
-    fa = result.final_answer
-    print("-" * 70)
-    if result.sql:
-        print("\nSQL:\n" + result.sql + "\n")
-    if fa:
-        if fa.assumptions:
-            print("Assumptions:")
-            for a in fa.assumptions:
-                print(f"  - {a}")
-        print("\nAnswer: " + fa.explanation)
-        if fa.plausibility_warnings:
-            print("\nPlausibility flags:")
-            for w in fa.plausibility_warnings:
-                print(f"  - {w['message']}")
-        if result.rows:
-            print(f"\nRows ({fa.row_count} returned, showing up to 10):")
-            keys = list(result.rows[0].keys())
+def _render(resp) -> None:
+    if resp.kind == "answer":
+        mh = resp.mh
+        if resp.mh and resp.mh.is_multi:
+            print("-" * 70)
+        if mh and mh.sql:
+            print("\nSQL:\n" + mh.sql)
+        print("\nAnswer: " + resp.text)
+        if mh and mh.rows:
+            keys = list(mh.rows[0].keys())
+            print(f"\nRows ({len(mh.rows)} shown):")
             print("  " + " | ".join(keys))
-            for r in result.rows[:10]:
+            for r in mh.rows[:10]:
                 print("  " + " | ".join(str(r[k]) for k in keys))
-        badge = _BADGE_ICON.get(fa.trust_badge.value, fa.trust_badge.value)
-        print(f"\nTrust: {badge}   |   attempts: {result.attempts}   |   {fa.elapsed_ms}ms")
-    return 0
+        if mh:
+            print(f"\nTrust: {_BADGE.get(mh.trust_badge.value, mh.trust_badge.value)}  |  "
+                  f"{mh.attempts} attempt(s)")
+    elif resp.kind == "built":
+        print("\n" + resp.text)
+        if resp.review and resp.review.findings:
+            print("\nReview findings:")
+            for f in resp.review.findings:
+                print(f"  [{f.severity}] {f.title}: {f.detail}")
+        elif resp.review:
+            print("Review: " + resp.review.summary)
+    elif resp.kind == "review":
+        print("\n" + (resp.review.summary if resp.review else resp.text))
+        for f in (resp.review.findings if resp.review else []):
+            print(f"  [{f.severity}] {f.title}: {f.detail}")
+    else:  # refused / error
+        print("\n" + resp.text)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -85,28 +83,34 @@ def main(argv: list[str] | None = None) -> int:
         print("No warehouse found. Run `python run.py up` first.")
         return 1
     if not has_anthropic_key():
-        print(
-            "The NL->SQL query agent needs an Anthropic key (consumption edge).\n"
-            "Set ANTHROPIC_API_KEY or add a one-line anthropic.txt at the repo root.\n"
-            "The deterministic core (make up, dashboard) works without it."
-        )
+        print("The query agent needs an Anthropic key. Set ANTHROPIC_API_KEY or add "
+              "anthropic.txt at the repo root.")
         return 1
 
     ds = active_dataset()
-    print(f"Grounding schema for dataset '{ds}' from DuckDB...")
-    ctx = build_grounding_context(ds)
-    print(f"  grounded {len(ctx.tables)} tables, {len(ctx.relationships)} relationships.")
+    bm = is_build_mode()
+    session = Session(dataset=ds)
+    print(f"Conversation over dataset '{ds}'" + (" (build mode)" if bm else "") + ".")
+
+    def ask(msg: str) -> None:
+        print(f"\n> {msg}")
+        resp = handle_message(session, msg, build_mode=bm, on_event=_printer())
+        _render(resp)
 
     if argv:
-        return answer(" ".join(argv), ctx)
+        ask(" ".join(argv))
+        return 0
 
-    print("\nInteractive NL->SQL. Ask a question (empty line or Ctrl-C to quit).")
+    print("Ask a question; follow up naturally. Empty line or Ctrl-C to quit.")
+    if bm:
+        print("Build mode: try 'save that as mart_x' or 'review mart_y'.")
     try:
         while True:
-            q = input("\n> ").strip()
-            if not q:
+            msg = input("\n> ").strip()
+            if not msg:
                 break
-            answer(q, ctx)
+            resp = handle_message(session, msg, build_mode=bm, on_event=_printer())
+            _render(resp)
     except (EOFError, KeyboardInterrupt):
         print()
     return 0

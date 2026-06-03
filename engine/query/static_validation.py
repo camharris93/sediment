@@ -73,13 +73,21 @@ class ValidationResult:
 class _SchemaIndex:
     tables: dict[str, dict[str, ColumnInfo]]
     all_table_fqns: list[str]
+    # Synthetic prior-result tables, keyed by BARE name (no schema). Referenced
+    # unqualified and rewritten to CTEs at execution — exempt from qualification.
+    synthetic: dict[str, dict[str, ColumnInfo]]
 
 
 def _build_index(ctx: GroundingContext) -> _SchemaIndex:
     tables: dict[str, dict[str, ColumnInfo]] = {}
+    synthetic: dict[str, dict[str, ColumnInfo]] = {}
     for t in ctx.tables:
-        tables[t.fully_qualified.lower()] = {c.name.lower(): c for c in t.columns}
-    return _SchemaIndex(tables=tables, all_table_fqns=sorted(tables.keys()))
+        cols = {c.name.lower(): c for c in t.columns}
+        if t.is_synthetic:
+            synthetic[t.name.lower()] = cols
+        else:
+            tables[t.fully_qualified.lower()] = cols
+    return _SchemaIndex(tables=tables, all_table_fqns=sorted(tables.keys()), synthetic=synthetic)
 
 
 def _table_fqn(node: exp.Table) -> str:
@@ -129,6 +137,9 @@ def _scope_columns(scope: Scope, schema: _SchemaIndex):
         if isinstance(src, exp.Table):
             fq = _table_fqn(src)
             tbl = schema.tables.get(fq)
+            if tbl is None and not src.db and not src.catalog:
+                # Synthetic prior-result table, referenced by bare name.
+                tbl = schema.synthetic.get((src.name or "").lower())
             cols_by_source[al] = set(tbl.keys()) if tbl else set()
         elif isinstance(src, Scope):
             cols_by_source[al] = {
@@ -172,6 +183,10 @@ def validate_sql(sql: str, ctx: GroundingContext) -> ValidationResult:
     for tbl in ast.find_all(exp.Table):
         name_l = (tbl.name or "").lower()
         if name_l in cte_names and not tbl.db:
+            continue
+        # Synthetic prior-result tables are referenced unqualified and inlined as
+        # CTEs at execution — exempt from qualification + existence.
+        if name_l in schema.synthetic and not tbl.db and not tbl.catalog:
             continue
         if not _is_qualified(tbl):
             violations.append(Violation(

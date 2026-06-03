@@ -229,8 +229,20 @@ a human judgment call.
    L3/L4 failures feed structured violations back to L2 in a bounded **self-correction
    loop**. A query that can't be validated is a *transparent failure*, not a confident
    guess. Available as a CLI (`python run.py ask "…"`) **and built into the dashboard's
-   💬 Ask tab, which renders a live L1→L7 trace** (each layer lights up pass/retry/fail
-   with its intent, SQL, validation detail, and trust badge) as the answer is computed.
+   💬 Ask tab**.
+
+   The Ask tab is a **conversation**, not a one-shot box:
+   - **Follow-ups** — "now just the mammals", "break that down by class". Each turn's
+     result becomes a `turn_N_result` table the next turn can build on (inlined as a CTE).
+   - **Multi-hop** — a planner decomposes a complex question into ordered hops; each hop
+     can query an earlier hop's result; a synthesizer ties them into one answer.
+   - **Build from chat** — "save that as `mart_x`" promotes the last answer into a
+     committable dbt model (conversational synthetics are inlined so it's self-contained),
+     governed by build mode.
+   - **Review from chat** — "review `mart_y`" runs an **AI mart reviewer** that red-teams
+     the SQL against the measured relationships (fan-out, grain, missing tests, divide-by-
+     zero) and returns severity-tagged findings. It complements the scaffolder: one agent
+     *builds*, another *critiques*, a human commits.
 
 4. **Build a model from chat** (`engine/modeling.py` + dashboard 🛠 Build tab) — promote
    a validated chat answer into a dbt model. The chat SQL is rewritten from
@@ -311,6 +323,8 @@ Two curated marts (`dbt_project/models/marts/`):
   scaffolding) + a **dataset selector** that scopes the Report/Ask/Build to one dataset
 - ✅ **8.** Per-dataset schema namespacing (`<dataset>_raw/_staging/_marts`) + dataset-prefixed
   model names with `alias` — multiple datasets coexist in one warehouse, even sharing table names
+- ✅ **9.** Conversational query agent — follow-up memory, multi-hop planning/synthesis, and
+  build-a-model + AI-reviewer **in the chat**
 
 ## Decisions taken (PRD §11 open questions)
 

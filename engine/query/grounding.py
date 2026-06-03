@@ -51,6 +51,12 @@ class TableInfo:
     columns: list[ColumnInfo]
     grain: list[str] | None = None
     grain_method: str = "none"
+    # Synthetic tables are intermediate results from a prior HOP (within one
+    # multi-hop question) or a prior TURN (in a conversation). They aren't real
+    # warehouse tables — they're referenced by BARE name and rewritten into CTEs
+    # at execution time, inlining the SQL that produced them.
+    is_synthetic: bool = False
+    synthetic_sql: str | None = None
 
 
 @dataclass
@@ -67,6 +73,14 @@ class GroundingContext:
     tables: list[TableInfo]
     relationships: list[Relationship]
     built_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+    def with_synthetic_tables(self, syn: list[TableInfo]) -> "GroundingContext":
+        """Return a copy with synthetic prior-hop/prior-turn result tables appended.
+        They appear in `tables` (so L1/L2/L3 see them) but are flagged synthetic
+        and rewritten to CTEs at execution time."""
+        return GroundingContext(
+            schemas=self.schemas, tables=list(self.tables) + list(syn),
+            relationships=self.relationships, built_at=self.built_at)
 
 
 def _base_type(t: str) -> str:
@@ -221,7 +235,9 @@ def to_prompt_summary(ctx: GroundingContext) -> str:
         "",
         "## Tables",
     ]
-    for t in ctx.tables:
+    real_tables = [t for t in ctx.tables if not t.is_synthetic]
+    synthetic_tables = [t for t in ctx.tables if t.is_synthetic]
+    for t in real_tables:
         grain = ",".join(t.grain) if t.grain else "(no unique key derived)"
         lines.append("")
         lines.append(f"### `{t.fully_qualified}`  ({t.row_count:,} rows; grain = {grain})")
@@ -254,4 +270,91 @@ def to_prompt_summary(ctx: GroundingContext) -> str:
         "parent's rows. Pre-aggregate the child to the parent's grain before "
         "aggregating parent columns, or you will inflate SUM/AVG/COUNT."
     )
+
+    if synthetic_tables:
+        lines.append("")
+        lines.append("## Prior results (from earlier hops/turns — query by BARE NAME)")
+        lines.append(
+            "These are NOT warehouse tables — they are results computed earlier in this "
+            "analysis/conversation. Reference them by their bare name (no `schema.` prefix); "
+            "they're inlined as CTEs at execution. Use them to build on what was already computed."
+        )
+        for t in synthetic_tables:
+            lines.append("")
+            lines.append(f"### `{t.name}`  ({t.row_count:,} rows)")
+            for c in t.columns:
+                extras = []
+                if c.sample_values:
+                    extras.append("samples=[" + ", ".join(repr(v) for v in c.sample_values[:5]) + "]")
+                extra_str = f"  ({'; '.join(extras)})" if extras else ""
+                lines.append(f"  - `{c.name}` {c.type}{extra_str}")
     return "\n".join(lines)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Synthetic-table SQL rewriting — inline prior hop/turn results as CTEs
+# ─────────────────────────────────────────────────────────────────────────────
+
+def inline_synthetic_ctes(sql: str, ctx: GroundingContext) -> str:
+    """Rewrite SQL so any reference to a synthetic prior-result table (by bare
+    name) becomes a CTE inlining the SQL that produced it. Recursive: a synthetic
+    can reference earlier synthetics. No-op when there are no synthetics."""
+    import sqlglot
+    from sqlglot import expressions as exp
+
+    synthetic_by_name = {
+        t.name.lower(): t for t in ctx.tables if t.is_synthetic and t.synthetic_sql
+    }
+    if not synthetic_by_name:
+        return sql
+    try:
+        ast = sqlglot.parse_one(sql, dialect="duckdb")
+    except Exception:
+        return sql
+
+    referenced: set[str] = set()
+
+    def scan(node) -> None:
+        for tbl in node.find_all(exp.Table):
+            nm = (tbl.name or "").lower()
+            if tbl.catalog or tbl.db:
+                continue
+            if nm in synthetic_by_name:
+                referenced.add(nm)
+
+    scan(ast)
+    if not referenced:
+        return sql
+
+    # Transitive deps (hop3 -> hop2 -> hop1).
+    queue = list(referenced)
+    while queue:
+        name = queue.pop()
+        inner_sql = synthetic_by_name[name].synthetic_sql or ""
+        try:
+            inner_ast = sqlglot.parse_one(inner_sql, dialect="duckdb")
+        except Exception:
+            continue
+        for tbl in inner_ast.find_all(exp.Table):
+            nm = (tbl.name or "").lower()
+            if not tbl.catalog and not tbl.db and nm in synthetic_by_name and nm not in referenced:
+                referenced.add(nm)
+                queue.append(nm)
+
+    def order_key(n: str) -> int:
+        import re
+        m = re.search(r"\d+", n)
+        return int(m.group(0)) if m else 0
+
+    ordered = sorted(referenced, key=order_key)
+    ctes = ",\n".join(
+        f"  {synthetic_by_name[n].name} AS (\n    {synthetic_by_name[n].synthetic_sql.strip()}\n  )"
+        for n in ordered
+    )
+    stripped = sql.lstrip()
+    if stripped[:5].upper() == "WITH ":
+        idx = stripped.upper().find("WITH ")
+        head = stripped[:idx + 5]
+        tail = stripped[idx + 5:]
+        return f"{head}{ctes.lstrip()},\n{tail}"
+    return f"WITH\n{ctes}\n{sql.strip()}"
