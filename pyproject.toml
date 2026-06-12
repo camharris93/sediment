@@ -60,6 +60,9 @@ include = ["engine*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+# Put the repo root on sys.path so `import engine` / `import run` / `import evals`
+# resolve from a bare checkout — no `pip install -e .` required to run the suite.
+pythonpath = ["."]
 # The deterministic suite is offline and key-free; the eval harness's live tier is
 # opt-in behind a marker so CI never needs an Anthropic key.
 markers = [
