@@ -53,23 +53,82 @@ class ExecutionOutcome:
     refusal: Refusal | None = None
 
 
-_DENIED = (exp.Insert, exp.Update, exp.Delete, exp.Drop, exp.Create, exp.Alter,
-           exp.TruncateTable, exp.Merge, exp.Command)
+# DDL/DML and anything sqlglot models as a non-query statement. `Command` is the
+# catch-all for things sqlglot doesn't model structurally (PRAGMA, CALL, EXPORT…).
+# `Copy` writes to the filesystem; `Attach`/`Detach`/`Set`/`Pragma`/`Use` change
+# engine state; `Install`/`LoadData` pull in extensions (network exfil surface).
+# DuckDB's read-only connection blocks the writes but NOT Copy/Install/Set/Pragma —
+# so they must be denied here, in the layer that owns the trust boundary.
+_DENIED = (
+    exp.Insert, exp.Update, exp.Delete, exp.Drop, exp.Create, exp.Alter,
+    exp.TruncateTable, exp.Merge, exp.Command, exp.Copy, exp.Attach, exp.Detach,
+    exp.Set, exp.Pragma, exp.Use, exp.Install, exp.LoadData,
+)
+
+# Only these may sit at the top of an accepted statement.
+_QUERY_ROOTS = (exp.Select, exp.Union, exp.Intersect, exp.Except, exp.Subquery, exp.With)
+
+# A FROM source must be a NAMED warehouse relation (`schema.table`) or a CTE — i.e.
+# a Table node whose `this` is a plain identifier. Every DuckDB file/network reader
+# (read_csv, read_parquet, read_json, read_text, glob, delta_scan, …) instead parses
+# as a Table WRAPPING A FUNCTION. So rather than chase a denylist of reader names
+# (which grows with every DuckDB release), we reject any function-valued FROM source
+# structurally — that catches today's readers and tomorrow's. A short allowlist of
+# pure, side-effect-free generators stays permitted so ordinary analytical SQL works.
+_SAFE_TABLE_FUNCS = frozenset({"generate_series", "range", "unnest", "values"})
+
+
+def _external_source_name(node: exp.Expression) -> str | None:
+    """If `node` is a FROM source backed by a table-valued FUNCTION (a file/network
+    reader or other non-relation source), return its lowercased name; else None.
+    A normal `schema.table` reference has `this` as an Identifier and returns None."""
+    if not isinstance(node, exp.Table):
+        return None
+    inner = node.this
+    if inner is None or isinstance(inner, exp.Identifier):
+        return None  # ordinary named relation
+    if isinstance(inner, exp.Func):
+        # Anonymous funcs carry the real name in `.name`; typed reader nodes
+        # (ReadCSV, ReadParquet, …) carry their arg there, so use the class name.
+        nm = (inner.name if isinstance(inner, exp.Anonymous) else inner.sql_name()).lower()
+        if nm in _SAFE_TABLE_FUNCS:
+            return None
+        return nm or "function"
+    return None
 
 
 def _is_read_only(sql: str) -> tuple[bool, str | None]:
+    # Parse ALL statements: a single `;`-joined payload (e.g. `SELECT 1; DROP …`)
+    # must be rejected wholesale, not have only its first statement inspected.
     try:
-        ast = sqlglot.parse_one(sql, dialect=DIALECT)
+        statements = sqlglot.parse(sql, dialect=DIALECT)
     except ParseError as exc:
         return False, f"could not parse SQL for read-only check: {exc}"
-    if ast is None:
+    statements = [s for s in statements if s is not None]
+    if not statements:
         return False, "empty AST"
-    if not isinstance(ast, (exp.Select, exp.Union, exp.Intersect, exp.Except, exp.Subquery, exp.With)):
+    if len(statements) > 1:
+        return False, f"multiple statements are not permitted ({len(statements)} found)"
+
+    ast = statements[0]
+    if not isinstance(ast, _QUERY_ROOTS):
         return False, f"non-query top-level statement: {type(ast).__name__.upper()}"
     for n in ast.walk():
         if isinstance(n, _DENIED):
             return False, f"statement contains a {type(n).__name__.upper()} which is not permitted"
+        ext = _external_source_name(n)
+        if ext:
+            return False, (f"statement reads from an external source `{ext}(...)` — only "
+                           "curated warehouse relations may be queried")
     return True, None
+
+
+def is_read_only_query(sql: str) -> tuple[bool, str | None]:
+    """Public form of the L5 read-only gate: True iff `sql` is a single read-only
+    query touching only warehouse relations (no writes, no multi-statement, no
+    external-source table functions). Reused by the build path (engine/modeling)
+    so chat SQL is gated identically before it is ever run read-WRITE."""
+    return _is_read_only(sql)
 
 
 def guarded_execute(sql: str, dry_run_report: DryRunReport, *,

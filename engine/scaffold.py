@@ -126,7 +126,6 @@ def deterministic_staging(profile: dict, dataset: str) -> tuple[str, str]:
         "select * from renamed\n"
     )
 
-    key_cols = [a for c, a in zip(cols, aliases) if c.get("is_candidate_key")]
     yml_lines = [
         "version: 2",
         "",

@@ -1,0 +1,139 @@
+# Golden questions for the NL->SQL agent, over the AnAge reference dataset.
+#
+# Each case has:
+#   question     - the natural-language question (used in --live mode)
+#   fixture_sql  - a known-good DuckDB query that answers it (used in replay mode,
+#                  and as the regression anchor for the deterministic L3-L6 layers)
+#   expect       - invariants the RESULT must satisfy, checked in BOTH modes:
+#       row_count      - exact number of result rows
+#       min_rows       - at least this many rows
+#       first_row      - column -> expected value on the first result row
+#       all_positive   - these columns must be > 0 in every row
+#       columns        - these columns must be present in the result
+#   refuse: true - this is an ADVERSARIAL case; the engine MUST refuse fixture_sql.
+#                  Replay feeds it to the guard and asserts refusal. Skipped in
+#                  --live mode (L2 only ever generates SELECTs).
+#
+# Add cases freely — the harness scales to whatever is listed here.
+
+questions:
+  - id: longest_for_size
+    question: "which animals live far longer than their body size predicts?"
+    fixture_sql: >
+      SELECT common_name, class, longevity_ratio, overperformer_rank
+      FROM anage_marts.mart_aging_outliers
+      ORDER BY overperformer_rank
+      LIMIT 5
+    expect:
+      row_count: 5
+      columns: [common_name, longevity_ratio, overperformer_rank]
+      first_row:
+        common_name: "Rougheye rockfish"
+        overperformer_rank: 1
+      all_positive: [longevity_ratio]
+
+  - id: top_overperformer
+    question: "what is the single biggest longevity over-performer?"
+    fixture_sql: >
+      SELECT common_name, longevity_ratio
+      FROM anage_marts.mart_aging_outliers
+      WHERE overperformer_rank = 1
+    expect:
+      row_count: 1
+      first_row:
+        common_name: "Rougheye rockfish"
+
+  - id: olm_is_second
+    question: "where does the olm rank among longevity over-performers?"
+    fixture_sql: >
+      SELECT common_name, overperformer_rank
+      FROM anage_marts.mart_aging_outliers
+      WHERE common_name = 'Olm'
+    expect:
+      row_count: 1
+      first_row:
+        overperformer_rank: 2
+
+  - id: species_per_class
+    question: "how many species are there in each taxonomic class?"
+    fixture_sql: >
+      SELECT class, n_species
+      FROM anage_marts.mart_longevity_by_class
+      ORDER BY n_species DESC
+    expect:
+      min_rows: 20
+      columns: [class, n_species]
+      all_positive: [n_species]
+
+  - id: class_with_most_species
+    question: "which taxonomic class has the most species?"
+    fixture_sql: >
+      SELECT class, n_species
+      FROM anage_marts.mart_longevity_by_class
+      ORDER BY n_species DESC
+      LIMIT 1
+    expect:
+      row_count: 1
+      all_positive: [n_species]
+
+  - id: mammal_avg_longevity
+    question: "what is the average longevity for mammals?"
+    fixture_sql: >
+      SELECT class, avg_longevity_yrs
+      FROM anage_marts.mart_longevity_by_class
+      WHERE class = 'Mammalia'
+    expect:
+      row_count: 1
+      all_positive: [avg_longevity_yrs]
+
+  - id: longest_lived_class
+    question: "which class contains the longest-lived species, and how old?"
+    fixture_sql: >
+      SELECT class, max_longevity_yrs
+      FROM anage_marts.mart_longevity_by_class
+      ORDER BY max_longevity_yrs DESC
+      LIMIT 1
+    expect:
+      row_count: 1
+      all_positive: [max_longevity_yrs]
+
+  - id: reproductive_scaling_present
+    question: "list species with their reproductive rate and longevity"
+    fixture_sql: >
+      SELECT common_name, max_longevity_yrs, litters_per_year
+      FROM anage_marts.mart_reproductive_rate_scaling
+      WHERE litters_per_year IS NOT NULL
+      LIMIT 10
+    expect:
+      min_rows: 1
+      columns: [common_name, litters_per_year]
+
+  - id: aggregate_total_species
+    question: "how many species are in the dataset in total?"
+    fixture_sql: >
+      SELECT SUM(n_species) AS total_species
+      FROM anage_marts.mart_longevity_by_class
+    expect:
+      row_count: 1
+      all_positive: [total_species]
+
+  # ── Adversarial cases (replay-only): the guard MUST refuse these ──────────
+  - id: refuse_delete
+    question: "delete every species from the database"
+    fixture_sql: "DELETE FROM anage_marts.mart_aging_outliers"
+    refuse: true
+
+  - id: refuse_drop
+    question: "drop the aging outliers table"
+    fixture_sql: "DROP TABLE anage_marts.mart_aging_outliers"
+    refuse: true
+
+  - id: refuse_local_file_read
+    question: "read the server's password file"
+    fixture_sql: "SELECT * FROM read_csv('/etc/passwd')"
+    refuse: true
+
+  - id: refuse_multi_statement
+    question: "show classes then delete them"
+    fixture_sql: "SELECT class FROM anage_marts.mart_longevity_by_class; DROP TABLE anage_marts.mart_longevity_by_class"
+    refuse: true

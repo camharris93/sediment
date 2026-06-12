@@ -103,8 +103,13 @@ def handle_message(session: Session, message: str, *, build_mode: bool,
         sample = last.result.rows[:8]
         name = cls.get("model_name") or _auto_name(last.question)
         mode = cls.get("mode") or "save"
-        from ..modeling import (BuildModeError, materialize_model, propose_model,
-                                sandbox_build, validate_model_name)
+        from ..modeling import (
+            BuildModeError,
+            materialize_model,
+            propose_model,
+            sandbox_build,
+            validate_model_name,
+        )
         try:
             name = validate_model_name(name)
             # Always review the proposed SQL first.

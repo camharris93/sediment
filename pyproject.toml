@@ -1,0 +1,88 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+# The bare name "sediment" is taken on PyPI by an unrelated project, so the
+# DISTRIBUTION name is "sediment-stack" (what you'd `pip install`). The import
+# package (`engine`) and the CLI command (`sediment`) are unchanged — users type
+# `pip install sediment-stack` once, then `sediment up` / `sediment ask` after.
+name = "sediment-stack"
+version = "0.1.0"
+description = "A dataset-agnostic analytics-engineering framework: deterministic dbt core, AI at the edges."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "camharris93" }]
+keywords = ["dbt", "duckdb", "analytics-engineering", "nl2sql", "data-pipeline"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Database",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
+dependencies = [
+    "duckdb>=1.1",
+    "dbt-core>=1.7",
+    "dbt-duckdb>=1.7",
+    "pyyaml>=6.0",
+    "sqlglot>=25.0",
+    "streamlit>=1.36",
+    "pandas>=2.0",
+    "altair>=5.0",
+]
+
+[project.optional-dependencies]
+# The AI edge layers (scaffold/orchestrate/ask). The core pipeline runs without these.
+ai = ["anthropic>=0.40", "pydantic>=2.6", "python-dotenv>=1.0"]
+dev = ["pytest>=8.0", "ruff>=0.5"]
+
+[project.urls]
+Homepage = "https://github.com/camharris93/sediment"
+Repository = "https://github.com/camharris93/sediment"
+
+[project.scripts]
+sediment = "run:cli_main"
+
+[tool.setuptools]
+# Flat layout: the engine package plus the top-level run module (the CLI dispatch).
+py-modules = ["run"]
+
+# NOTE before publishing to PyPI: `sediment init` copies dbt_project/ templates,
+# which currently live OUTSIDE the engine package. An editable install (`pip install
+# -e .`) and a git install both see them; a built wheel would NOT. To publish a
+# working wheel, ship those templates as package data (move them under engine/ or
+# add a MANIFEST.in + include-package-data). Not needed for source/git installs.
+
+[tool.setuptools.packages.find]
+include = ["engine*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+# The deterministic suite is offline and key-free; the eval harness's live tier is
+# opt-in behind a marker so CI never needs an Anthropic key.
+markers = [
+    "live: tests that call the Anthropic API (need ANTHROPIC_API_KEY; skipped in CI)",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = [
+    "E501",  # line length is enforced softly; long SQL/prompt strings are fine
+    "B008",  # default-arg calls (we use them deliberately for path defaults)
+    "B905",  # zip() strict=: retrofitting to existing equal-length zips is risky
+]
+
+[tool.ruff.lint.per-file-ignores]
+# The dashboard must insert REPO_ROOT on sys.path before importing engine.*, so
+# its engine imports are intentionally not at the top of the file.
+"dashboard/app.py" = ["E402", "E702"]
+# run.py reconfigures stdout encoding before importing engine.* (Windows console).
+"run.py" = ["E402"]
+# Tests use leading-underscore imports and assert-on-private helpers by design.
+"tests/*" = ["E402"]

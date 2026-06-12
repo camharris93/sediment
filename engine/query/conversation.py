@@ -10,14 +10,18 @@ In-memory only; sessions live for the process. Persistence is a separate call.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 from .grounding import (
-    ColumnInfo, GroundingContext, TableInfo,
-    build_grounding_context, inline_synthetic_ctes,
+    ColumnInfo,
+    GroundingContext,
+    TableInfo,
+    build_grounding_context,
+    inline_synthetic_ctes,
 )
-from .orchestrator import PipelineResult, run_to_executed_answer
+from .orchestrator import PipelineResult
 from .trace import TraceEvent
 
 EventCallback = Callable[[TraceEvent], None]
@@ -139,6 +143,7 @@ def run_turn(session: Session, question: str, *, on_event: EventCallback | None 
     synthetic tables; the question is planned, run, and synthesized. Returns the
     MultiHopResult. The display hop's result is registered as `turn_<N>_result`."""
     from dataclasses import replace
+
     from .multihop import run_multi_hop
 
     idx = len(session.turns) + 1

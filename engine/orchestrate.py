@@ -26,7 +26,6 @@ import os
 import shutil
 import subprocess
 import sys
-from pathlib import Path
 from typing import Any
 
 import duckdb
@@ -254,7 +253,7 @@ def orchestrate(dataset: str, *, inject_break: bool = False) -> int:
 
     print("\n[4/4] dbt test")
     try:
-        tr = _dbt(["test"])
+        _dbt(["test"])
         results = _parse_run_results()
         failures = _failures(results)
 

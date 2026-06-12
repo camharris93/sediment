@@ -12,7 +12,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from .charting import ChartSpec
-from .config import DATASETS_DIR, is_build_mode
+from .config import DATASETS_DIR
 from .modeling import require_build_mode
 
 

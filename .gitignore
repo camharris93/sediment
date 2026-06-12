@@ -38,6 +38,13 @@ __pycache__/
 venv/
 .env
 
+# Packaging / build & tooling caches
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+
 # Secrets — AI layers read the key from here if env var is unset.
 anthropic.txt
 

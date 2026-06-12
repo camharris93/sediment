@@ -12,7 +12,6 @@ from .grounding import GroundingContext, to_prompt_summary
 from .intent import Intent
 from .static_validation import ValidationResult
 
-
 _SYSTEM = """\
 You are the GENERATION layer (L2) of a trust-first NL->SQL agent. Translate a
 structured Intent into DuckDB SQL. Your output is validated by L3 (independent

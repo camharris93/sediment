@@ -26,7 +26,32 @@ except Exception:  # pragma: no cover
     _DOTENV = False
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+_PACKAGE_PARENT = Path(__file__).resolve().parents[1]
+
+
+def _resolve_project_root() -> Path:
+    """Locate the sediment WORKSPACE (where datasets/ + dbt_project/ + the warehouse
+    live). This is what lets an installed `sediment` run against a project directory
+    anywhere, not just the source checkout:
+
+      1. $SEDIMENT_HOME if set (explicit; what a deployed/installed run uses);
+      2. else walk up from the CWD to the nearest dir containing both `datasets/`
+         and `dbt_project/` (so `sediment up` works from inside a workspace);
+      3. else the package's parent dir (the in-repo / editable-install default).
+
+    The default path (run from the repo root) resolves to the repo, so existing
+    behaviour is unchanged."""
+    env = os.environ.get("SEDIMENT_HOME")
+    if env:
+        return Path(env).expanduser().resolve()
+    cwd = Path.cwd().resolve()
+    for d in (cwd, *cwd.parents):
+        if (d / "datasets").is_dir() and (d / "dbt_project").is_dir():
+            return d
+    return _PACKAGE_PARENT
+
+
+REPO_ROOT = _resolve_project_root()
 WAREHOUSE_PATH = REPO_ROOT / "warehouse.duckdb"
 DATASETS_DIR = REPO_ROOT / "datasets"
 DBT_PROJECT_DIR = REPO_ROOT / "dbt_project"
@@ -92,13 +117,30 @@ class DatasetConfig:
     def is_multi_table(self) -> bool:
         return len(self.tables) > 1
 
-    def resolve_source(self, spec: "TableSpec | None" = None) -> Path:
+    def resolve_source(self, spec: TableSpec | None = None) -> Path:
         spec = spec or self.tables[0]
         p = Path(spec.source)
         return p if p.is_absolute() else (self.dir / spec.source)
 
 
+_DATASET_NAME_RE = __import__("re").compile(r"^[a-z0-9][a-z0-9_-]{0,63}$", __import__("re").IGNORECASE)
+
+
+def validate_dataset_name(name: str) -> str:
+    """A dataset name becomes a directory and a SQL schema prefix, so constrain it
+    to a safe slug. Rejects path-traversal (`../`), separators, and anything that
+    couldn't be a bare schema identifier — before it is ever joined onto a path."""
+    name = (name or "").strip()
+    if not _DATASET_NAME_RE.match(name):
+        raise ValueError(
+            f"Invalid dataset name {name!r}: use letters, digits, '_' or '-' "
+            "(1-64 chars, no path separators)."
+        )
+    return name
+
+
 def load_dataset_config(name: str) -> DatasetConfig:
+    name = validate_dataset_name(name)
     cfg_path = DATASETS_DIR / name / "config.yml"
     if not cfg_path.exists():
         raise FileNotFoundError(

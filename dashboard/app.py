@@ -21,8 +21,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from engine.config import WAREHOUSE_PATH, active_dataset, app_mode, has_anthropic_key, is_build_mode
 from engine import registry
+from engine.config import WAREHOUSE_PATH, active_dataset, app_mode, has_anthropic_key, is_build_mode
 
 st.set_page_config(page_title="sediment", layout="wide")
 
@@ -281,7 +281,7 @@ with tab_report:
         render_generic_report(marts)
 
     # Custom (AI-built) blocks — render for everyone, scoped to this dataset.
-    from engine.report_config import load_blocks, delete_block, move_block
+    from engine.report_config import delete_block, load_blocks, move_block
     blocks = load_blocks(sel)
     if blocks:
         st.divider()
@@ -405,8 +405,8 @@ with tab_ask:
     elif not marts and not staging:
         st.info(f"Nothing to query for **{sel}** yet — build its models first.")
     else:
-        from engine.query.conversation import Session
         from engine.query.agent import handle_message
+        from engine.query.conversation import Session
         # One Session + display log per dataset (resets when you switch datasets).
         if st.session_state.get("conv_dataset") != sel:
             st.session_state.conv_dataset = sel

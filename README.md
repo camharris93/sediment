@@ -1,6 +1,6 @@
 # sediment — a dataset-agnostic analytics-engineering framework
 
-[![CI](https://github.com/camharris93/sediment/actions/workflows/ci.yml/badge.svg)](https://github.com/camharris93/sediment/actions/workflows/ci.yml)
+[![CI](https://github.com/camharris93/sediment/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/camharris93/sediment/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/camharris93/sediment?sort=semver&color=success)](https://github.com/camharris93/sediment/releases)
 [![License](https://img.shields.io/github/license/camharris93/sediment?color=informational)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
@@ -112,6 +112,41 @@ Build / chart features) each need an Anthropic key — set once, used by all.
 
 ---
 
+## Install it as a tool
+
+The `python run.py …` form always works from a clone. You can also install sediment
+as a real command-line tool and run it against a project directory **anywhere**:
+
+```bash
+pip install -e .            # from a clone — installs the `sediment` command
+# or straight from GitHub, no clone:
+pip install "git+https://github.com/camharris93/sediment.git"
+
+sediment up                 # same as `python run.py up`
+sediment ask "which animals live longest for their size?"
+```
+
+`sediment <target>` is exactly `python run.py <target>` — every target above works
+either way. To start a **fresh project** of your own (separate from this repo):
+
+```bash
+sediment init ~/my-analytics      # scaffold a new workspace (dbt project + datasets/)
+cd ~/my-analytics
+# drop a file in datasets/example/data/ and edit datasets/example/config.yml
+sediment up example
+```
+
+sediment locates the active **workspace** (where `datasets/`, `dbt_project/`, and the
+warehouse live) by walking up from the current directory, or from `$SEDIMENT_HOME` if
+set — so one installed tool can drive many separate projects.
+
+> **On PyPI:** the published name will be **`sediment-stack`** (the bare name
+> `sediment` is taken by an unrelated project), so the eventual public install is
+> `pip install sediment-stack` — the command stays `sediment`. Not published yet;
+> the git/clone installs above are the current distribution path.
+
+---
+
 ## Repo shape
 
 ```
@@ -137,7 +172,10 @@ dbt_project/            dbt Core project (DuckDB)
   models/staging/       stg_anage + _sources.yml + tests
   models/marts/         mart_longevity_by_class, mart_aging_outliers (curated)
 dashboard/app.py        Streamlit BI — Report / Ask (chat) / Build tabs
-run.py / Makefile       the one-command wrapper
+run.py / Makefile       the one-command wrapper (run.py = the `sediment` command)
+pyproject.toml          packaging (`pip install` → `sediment` CLI) + ruff/pytest config
+tests/                  pytest suite — incl. adversarial SQL-guard tests (offline, no key)
+evals/                  NL→SQL golden-question harness (replay = no key; --live = full L1→L7)
 warehouse.duckdb        the entire warehouse — one file (git-ignored)
 ```
 
@@ -317,6 +355,35 @@ Two curated marts (`dbt_project/models/marts/`):
 
 ---
 
+## Tests, evals & trust boundary
+
+The framework's pitch is *trust*, so the framework itself is tested — not just the
+data. Everything here runs **offline, no API key**:
+
+```bash
+pip install -r requirements.txt pytest ruff
+pytest -m "not live"        # the deterministic engine + the SQL trust-boundary guards
+ruff check .               # lint
+python evals/harness.py    # replay the NL→SQL golden questions through L3–L6
+```
+
+- **`tests/`** — the deterministic engine under test: ingest auto-typing, profiling,
+  the scaffold baseline, config/grounding, and — most importantly — the
+  **read-only execution guard**. `test_read_only_guard.py` is adversarial: every known
+  way to turn "a SELECT" into a write, a `;`-chained second statement, a local-file
+  read (`read_csv('/etc/passwd')`), or an extension load **must** be refused, and
+  ordinary analytical SQL **must** pass. The guard is the security boundary of the
+  NL→SQL agent; if you extend it, add the attack it defends against here first.
+- **`evals/`** — golden questions over AnAge with result invariants (the rockfish
+  *is* rank 1). **Replay mode** (default, no key) runs known-good SQL through the
+  deterministic layers L3–L6 and checks the values — CI-safe. **`--live`** runs the
+  full L1→L7 pipeline from the natural-language question (needs a key).
+- **CI** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs lint + the test
+  suite on **Linux and Windows × Python 3.10 and 3.13**, then proves a fresh clone
+  builds a green, tested pipeline with one command — fully offline.
+
+---
+
 ## Tech stack
 
 | Layer | Choice | Account needed? |
@@ -342,6 +409,9 @@ Two curated marts (`dbt_project/models/marts/`):
   scaffolding) + a **dataset selector** that scopes the Report/Ask/Build to one dataset
 - ✅ **8.** Per-dataset schema namespacing (`<dataset>_raw/_staging/_marts`) + dataset-prefixed
   model names with `alias` — multiple datasets coexist in one warehouse, even sharing table names
+- ✅ **9.** Hardening: pytest suite (incl. adversarial SQL-guard tests) + NL→SQL eval harness,
+  cross-platform CI matrix, hardened read-only guard (blocks local-file reads / multi-statement /
+  file writes), and `pip install` packaging (the `sediment` command + `sediment init`)
 
 ## Decisions taken (PRD §11 open questions)
 
