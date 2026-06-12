@@ -15,12 +15,11 @@ human commits.
 """
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from .grounding import GroundingContext, to_prompt_summary
+from .grounding import GroundingContext
 
 
 @dataclass
@@ -119,6 +118,7 @@ def review_sql(name: str, sql: str, sample_rows: list[dict[str, Any]], ctx: Grou
 def review_mart(dataset: str, mart_name: str) -> ReviewResult:
     """Review a BUILT mart by reading its relation + a sample from the warehouse."""
     import duckdb
+
     from ..config import WAREHOUSE_PATH
     from ..registry import marts_schema
     from .grounding import build_grounding_context

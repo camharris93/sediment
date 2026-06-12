@@ -33,7 +33,7 @@ class ChartSpec:
         return asdict(self)
 
     @staticmethod
-    def from_dict(d: dict) -> "ChartSpec":
+    def from_dict(d: dict) -> ChartSpec:
         return ChartSpec(
             chart_type=d.get("chart_type", "none"),
             x=d.get("x"), y=d.get("y"), series=list(d.get("series") or []),

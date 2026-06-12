@@ -7,7 +7,6 @@ single row. A failure feeds DuckDB's own error text back into the L2 loop.
 """
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 
 from .warehouse import DuckDBWarehouse

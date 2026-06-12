@@ -19,7 +19,7 @@ from pathlib import Path
 
 import duckdb
 
-from .config import WAREHOUSE_PATH, DatasetConfig, load_dataset_config
+from .config import WAREHOUSE_PATH, load_dataset_config
 
 
 # Map an extension to the DuckDB auto-reader table function. `.txt` is treated as

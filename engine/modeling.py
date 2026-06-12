@@ -27,6 +27,7 @@ from typing import Any
 import duckdb
 
 from .config import DBT_PROJECT_DIR, WAREHOUSE_PATH, is_build_mode
+from .query.execution import is_read_only_query
 
 MARTS_DIR = DBT_PROJECT_DIR / "models" / "marts"
 SANDBOX_SCHEMA = "_sandbox"
@@ -38,11 +39,28 @@ class BuildModeError(PermissionError):
     """Raised when a build action is attempted in view (read-only) mode."""
 
 
+class UnsafeModelSQLError(ValueError):
+    """Raised when SQL promoted from chat is not a single read-only query."""
+
+
 def require_build_mode() -> None:
     if not is_build_mode():
         raise BuildModeError(
             "Model-building is disabled in view mode. This deployment is read-only; "
             "run the authoring app (`python run.py dashboard`) to build models."
+        )
+
+
+def require_read_only_select(raw_sql: str) -> None:
+    """Defence-in-depth: the SQL body of a promoted model is run on a read-WRITE
+    connection (sandbox) and later by dbt, so re-assert it is a single read-only
+    query — no `;`-chained second statement, no DDL/DML, no external-source reader.
+    Build mode trusts the operator, but the SQL itself is LLM-authored and a
+    prompt-injection could smuggle a write; this is the server-side backstop."""
+    ok, reason = is_read_only_query(raw_sql)
+    if not ok:
+        raise UnsafeModelSQLError(
+            f"Refusing to build a model from non-read-only SQL: {reason}"
         )
 
 
@@ -113,6 +131,7 @@ def sandbox_build(name: str, raw_sql: str, *, sample_limit: int = 20) -> Sandbox
     """Materialize the raw (schema-qualified) SQL into `_sandbox.<name>` to preview
     what the model would produce. Isolated from `marts`; safe to re-run."""
     require_build_mode()
+    require_read_only_select(raw_sql)
     name = validate_model_name(name)
     relation = f"{SANDBOX_SCHEMA}.{name}"
     body = raw_sql.strip().rstrip(";")
@@ -172,6 +191,7 @@ def propose_model(name: str, raw_sql: str, *, dataset: str, question: str = "", 
     """Write the model file (raw refs rewritten to dbt refs, tagged to land in
     `<dataset>_marts`) for human review. Does not build it. Returns the path."""
     require_build_mode()
+    require_read_only_select(raw_sql)
     name = validate_model_name(name)
     MARTS_DIR.mkdir(parents=True, exist_ok=True)
     # File/node name is dataset-prefixed (globally unique); alias (in model_text)

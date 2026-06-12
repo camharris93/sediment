@@ -16,6 +16,7 @@ from typing import Any
 
 from .warehouse import DuckDBWarehouse
 
+
 # The query agent reads a dataset's marts (the curated answer surface) and staging
 # (the clean per-row contract). Schemas are per-dataset: <dataset>_marts / _staging.
 def schemas_for_dataset(dataset: str) -> list[str]:
@@ -74,7 +75,7 @@ class GroundingContext:
     relationships: list[Relationship]
     built_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
-    def with_synthetic_tables(self, syn: list[TableInfo]) -> "GroundingContext":
+    def with_synthetic_tables(self, syn: list[TableInfo]) -> GroundingContext:
         """Return a copy with synthetic prior-hop/prior-turn result tables appended.
         They appear in `tables` (so L1/L2/L3 see them) but are flagged synthetic
         and rewritten to CTEs at execution time."""
@@ -174,10 +175,12 @@ def _discover_schemas(con) -> list[str]:
 
 
 def build_grounding_context(dataset: str | None = None,
-                            schemas: list[str] | None = None) -> GroundingContext:
+                            schemas: list[str] | None = None,
+                            warehouse: DuckDBWarehouse | None = None) -> GroundingContext:
     """Ground one dataset's schemas (`<dataset>_marts` + `<dataset>_staging`) when
-    `dataset` is given, else every dataset's marts/staging schemas."""
-    wh = DuckDBWarehouse()
+    `dataset` is given, else every dataset's marts/staging schemas. `warehouse`
+    is injectable for tests/evals; it defaults to the repo warehouse."""
+    wh = warehouse or DuckDBWarehouse()
     con = wh._connect()
     tables: list[TableInfo] = []
     try:

@@ -1,7 +1,13 @@
 name: CI
 
-# Proves the core claim: a fresh clone builds a green, tested pipeline with one
-# command — no cloud, no API key, fully offline (the AnAge data ships in the repo).
+# Three things this proves on every push/PR:
+#   1. lint        — the engine stays clean (ruff).
+#   2. test        — the deterministic engine + the SQL trust-boundary guards pass,
+#                    on Linux AND Windows, on the oldest and newest supported Python
+#                    (the whole reason run.py exists is cross-platform support).
+#   3. build       — a fresh clone builds a green, tested pipeline with one command,
+#                    fully offline, no API key (the AnAge data ships in the repo),
+#                    and the no-key scaffold baseline runs.
 on:
   push:
     branches: [main]
@@ -9,21 +15,65 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
-    name: build + test (reproducibility proof)
+  lint:
+    name: lint (ruff)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
+      - run: pip install ruff
+      - run: ruff check .
 
+  test:
+    name: test (${{ matrix.os }}, py${{ matrix.python }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.10", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest
+      - name: Run the deterministic + security test suite
+        # Offline and key-free: SQL trust-boundary guards, ingest/profile/scaffold,
+        # config + path-traversal defence. The `live` marker (Anthropic-calling
+        # eval tier) is excluded so no key is ever needed in CI.
+        run: pytest -m "not live"
+
+  build:
+    name: build + scaffold (reproducibility proof, ${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
       - name: Install dependencies
         run: pip install -r requirements.txt
-
       - name: Build the whole pipeline + run dbt tests
         # `up` = load -> profile -> dbt run -> dbt test. Exits non-zero if any
         # test fails, so a red build means the pipeline is not reproducible.
         run: python run.py up
+      - name: No-key scaffold baseline (build-time path, deterministic tier)
+        # Proves the scaffolder's no-key deterministic baseline runs end-to-end
+        # (staging model + conservative tests) without an Anthropic key.
+        run: python run.py scaffold anage
+
+      - name: NL->SQL golden evals (replay tier, no key)
+        # Replays known-good SQL through the deterministic trust layers (L3-L6) and
+        # checks curated result values + that adversarial SQL is refused. No LLM.
+        run: python evals/harness.py

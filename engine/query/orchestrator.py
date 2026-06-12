@@ -6,8 +6,9 @@ terminal. Mirrors the sql-engine control flow, minus multi-hop (single-hop here)
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 from .dry_run import DryRunReport, dry_run_check
 from .execution import ExecutionOutcome, Provenance, Refusal, guarded_execute

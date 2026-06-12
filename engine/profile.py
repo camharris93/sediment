@@ -22,7 +22,6 @@ import duckdb
 
 from .config import WAREHOUSE_PATH, load_dataset_config
 
-
 _SAMPLE_TOPK = 8
 
 # DuckDB type families we treat as numeric / temporal for min-max + key tests.

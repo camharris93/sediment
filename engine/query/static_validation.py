@@ -12,9 +12,9 @@ to `schema.table` (DuckDB has no project layer).
 from __future__ import annotations
 
 import difflib
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Iterable
 
 import sqlglot
 from sqlglot import expressions as exp
