@@ -132,8 +132,8 @@ def t_scaffold(dataset: str, *flags: str) -> None:
     _run([PY, "-m", "engine.scaffold", dataset, *flags])
 
 
-def t_orchestrate(dataset: str) -> None:
-    _run([PY, "-m", "engine.orchestrate", dataset])
+def t_orchestrate(dataset: str, *flags: str) -> None:
+    _run([PY, "-m", "engine.orchestrate", dataset, *flags])
 
 
 def t_ask(dataset: str, question: str | None = None) -> None:
@@ -238,12 +238,13 @@ def main(argv: list[str]) -> int:
         t_ask(dataset, question)
         return 0
 
-    # Split a positional dataset name from any -/-- flags (e.g. scaffold mydata --write).
+    # Split a positional dataset name from any -/-- flags (e.g. scaffold mydata
+    # --write, or orchestrate anage --break).
     positional = [a for a in rest if not a.startswith("-")]
     flags = [a for a in rest if a.startswith("-")]
     dataset = positional[0] if positional else active_dataset()
-    if target == "scaffold":
-        t_scaffold(dataset, *flags)
+    if target in ("scaffold", "orchestrate"):
+        fn(dataset, *flags)
         return 0
     fn(dataset)
     return 0
