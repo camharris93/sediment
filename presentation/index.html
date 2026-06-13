@@ -38,12 +38,14 @@
   --serif:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;
   --mono:ui-monospace,"SF Mono","Cascadia Code","JetBrains Mono",Menlo,Consolas,monospace;
 
-  --maxw:1140px;
+  --maxw:1240px;
   --ease:cubic-bezier(.22,.61,.36,1);
 }
 
 *{box-sizing:border-box;margin:0;padding:0}
-html{scroll-behavior:smooth}
+/* Global scale: 112.5% root = everything sized in rem grows ~1 step bigger,
+   which reads well on a projector. */
+html{scroll-behavior:smooth;font-size:112.5%}
 body{
   background:var(--bg);
   color:var(--ink);
@@ -240,26 +242,55 @@ html.js .reveal.in{opacity:1;transform:none}
 @media (max-width:880px){.cols3{grid-template-columns:1fr}}
 
 /* ---- L1-L7 pipeline ------------------------------------------------------ */
-.layers7{margin-top:40px;display:flex;flex-direction:column;gap:9px}
-.l7{display:grid;grid-template-columns:64px 200px 1fr;gap:18px;align-items:center;
-  background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:15px 20px;
-  transition:border-color .35s var(--ease),transform .35s var(--ease),background .35s var(--ease)}
-.l7:hover{border-color:rgba(224,138,99,.45);transform:translateX(4px);background:var(--panel-2)}
-.l7 .id{font:700 15px/1 var(--mono);color:var(--clay);letter-spacing:.04em}
+.layers7{margin-top:34px;display:flex;flex-direction:column;gap:8px}
+.l7{display:grid;grid-template-columns:58px 184px 1fr auto;gap:16px;align-items:center;
+  background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:14px 18px;
+  transition:border-color .4s var(--ease),background .4s var(--ease),box-shadow .4s var(--ease)}
+.l7 .id{font:700 16px/1 var(--mono);color:var(--clay);letter-spacing:.04em}
 .l7 .nm{font-weight:650;font-size:1.02rem}
 .l7 .ro{color:var(--ink-dim);font-size:.95rem}
 .l7 .ro b{color:var(--ink)}
-@media (max-width:760px){.l7{grid-template-columns:48px 1fr;gap:10px}.l7 .ro{grid-column:1/-1}}
-.l7.term-fail{border-color:rgba(230,179,78,.4)}
-.verdict{margin-top:24px;display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:stretch}
+/* the "run": each layer snaps to a green pass as the pipeline executes */
+.l7 .flag{display:inline-flex;align-items:center;gap:8px;opacity:0;transform:scale(.82);
+  transition:opacity .3s var(--ease),transform .3s var(--ease);
+  font:700 11px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--sage);white-space:nowrap}
+.l7 .flag .tick{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;
+  background:rgba(134,179,166,.16);border:1px solid rgba(134,179,166,.5);color:var(--sage);font-size:12px}
+.l7.passed{border-color:rgba(134,179,166,.32);
+  background:linear-gradient(90deg,rgba(134,179,166,.09),var(--panel) 60%);box-shadow:inset 3px 0 0 var(--sage)}
+.l7.passed .flag{opacity:1;transform:none}
+@media (max-width:760px){.l7{grid-template-columns:44px 1fr auto;gap:8px 12px}.l7 .ro{grid-column:1/-1}}
+
+/* verdict = two animated traces: a question it CAN answer vs one it can't */
+.verdict{margin-top:22px;display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:stretch}
 @media (max-width:760px){.verdict{grid-template-columns:1fr}}
-.answercard{background:linear-gradient(180deg,rgba(134,179,166,.08),transparent);border:1px solid var(--line);border-radius:12px;padding:22px}
-.answercard .q{font:600 12px/1 var(--mono);letter-spacing:.06em;color:var(--sky);margin-bottom:10px}
-.answercard .qq{font-size:1.05rem;color:var(--ink);font-weight:550;margin-bottom:14px}
-.answercard table{width:100%;border-collapse:collapse;font-size:.9rem}
-.answercard td,.answercard th{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line-2)}
-.answercard th{font:600 10.5px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint)}
-.answercard td:last-child{color:var(--clay);font-weight:600;text-align:right;font-family:var(--mono)}
+.trace{border:1px solid var(--line);border-radius:13px;padding:24px;display:flex;flex-direction:column}
+.trace.pass{background:linear-gradient(180deg,rgba(134,179,166,.07),transparent)}
+.trace.refuse{background:linear-gradient(180deg,rgba(224,101,90,.06),transparent)}
+.trace .tl{font:700 13px/1 var(--mono);letter-spacing:.03em}
+.trace .tl.ok{color:var(--sage)} .trace .tl.bad{color:#e8806f}
+.trace .qq{font-size:1.08rem;color:var(--ink);font-weight:560;margin:12px 0 2px;line-height:1.35}
+.trace .qq em{color:var(--clay);font-style:normal}
+.trace .muted{color:var(--ink-faint);font-weight:400;font-size:.92rem}
+.run{display:flex;flex-wrap:wrap;gap:6px;margin:16px 0 4px}
+.rl{font:700 12px/1 var(--mono);letter-spacing:.03em;color:var(--ink-faint);
+  border:1px solid var(--line);background:rgba(255,255,255,.02);padding:7px 9px;border-radius:7px;
+  opacity:.45;transform:translateY(3px);transition:opacity .28s var(--ease),transform .28s var(--ease),
+  color .28s var(--ease),border-color .28s var(--ease),background .28s var(--ease)}
+.rl.on{opacity:1;transform:none;color:var(--sage);border-color:rgba(134,179,166,.5);background:rgba(134,179,166,.12)}
+.rl.stop.on{color:#ef8a78;border-color:rgba(224,101,90,.6);background:rgba(224,101,90,.14)}
+.trace table{width:100%;border-collapse:collapse;font-size:.92rem;margin-top:10px;
+  opacity:0;transition:opacity .45s var(--ease)}
+.trace.done table{opacity:1}
+.trace td,.trace th{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line-2)}
+.trace th{font:600 11px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint)}
+.trace td:last-child{color:var(--clay);font-weight:600;text-align:right;font-family:var(--mono)}
+.stopmsg{font-size:.98rem;color:var(--ink-dim);margin-top:10px;opacity:0;transition:opacity .45s var(--ease)}
+.stopmsg b{color:#ef8a78}
+.trace.done .stopmsg{opacity:1}
+.trace .badge{align-self:flex-start;opacity:0;transition:opacity .45s var(--ease)}
+.trace.done .badge{opacity:1}
+.badge.bad{color:#ef8a78;background:rgba(224,101,90,.1);border-color:rgba(224,101,90,.35)}
 .badge{display:inline-flex;align-items:center;gap:7px;margin-top:14px;font:600 11px/1 var(--mono);
   letter-spacing:.06em;color:var(--sage);background:rgba(134,179,166,.1);border:1px solid rgba(134,179,166,.3);
   padding:7px 11px;border-radius:999px}
@@ -486,32 +517,42 @@ footer b{color:var(--ink-dim)}
       <span class="eyebrow reveal">Trust, by construction</span>
       <h2 class="reveal d1">A question runs a gauntlet before it touches a row.</h2>
       <p class="lede reveal d2">Seven layers. The model proposes; the framework verifies — against the real schema, not the model's word for it.</p>
-      <div class="layers7">
-        <div class="l7 reveal d2"><div class="id">L1</div><div class="nm">Intent</div><div class="ro">restate the question, <b>surface assumptions</b> — auditable up front</div></div>
-        <div class="l7 reveal d2"><div class="id">L2</div><div class="nm">Generation</div><div class="ro">constrained DuckDB SQL over the <b>grounded schema only</b></div></div>
-        <div class="l7 reveal d3"><div class="id">L3</div><div class="nm">Static check</div><div class="ro">validate every column &amp; table against the live schema — <b>without touching the DB</b></div></div>
-        <div class="l7 reveal d3"><div class="id">L4</div><div class="nm">Dry run</div><div class="ro">DuckDB <b>EXPLAIN</b> binds &amp; plans it — not a single row read</div></div>
-        <div class="l7 reveal d4"><div class="id">L5</div><div class="nm">Execution</div><div class="ro"><b>read-only</b>, row-capped, full provenance</div></div>
-        <div class="l7 reveal d4"><div class="id">L6</div><div class="nm">Plausibility</div><div class="ro">join fan-out &amp; result-value <b>sanity checks</b></div></div>
-        <div class="l7 reveal d5"><div class="id">L7</div><div class="nm">Answer</div><div class="ro">plain English + a <b>trust badge</b>; every number traces to the SQL</div></div>
+      <div class="layers7 reveal d2" id="trust-layers">
+        <div class="l7"><div class="id">L1</div><div class="nm">Intent</div><div class="ro">restate the question, <b>surface assumptions</b> — auditable up front</div><div class="flag"><span class="tick">✓</span>pass</div></div>
+        <div class="l7"><div class="id">L2</div><div class="nm">Generation</div><div class="ro">constrained DuckDB SQL over the <b>grounded schema only</b></div><div class="flag"><span class="tick">✓</span>pass</div></div>
+        <div class="l7"><div class="id">L3</div><div class="nm">Static check</div><div class="ro">validate every column &amp; table against the live schema — <b>without touching the DB</b></div><div class="flag"><span class="tick">✓</span>pass</div></div>
+        <div class="l7"><div class="id">L4</div><div class="nm">Dry run</div><div class="ro">DuckDB <b>EXPLAIN</b> binds &amp; plans it — not a single row read</div><div class="flag"><span class="tick">✓</span>pass</div></div>
+        <div class="l7"><div class="id">L5</div><div class="nm">Execution</div><div class="ro"><b>read-only</b>, row-capped, full provenance</div><div class="flag"><span class="tick">✓</span>pass</div></div>
+        <div class="l7"><div class="id">L6</div><div class="nm">Plausibility</div><div class="ro">join fan-out &amp; result-value <b>sanity checks</b></div><div class="flag"><span class="tick">✓</span>pass</div></div>
+        <div class="l7"><div class="id">L7</div><div class="nm">Answer</div><div class="ro">plain English + a <b>trust badge</b>; every number traces to the SQL</div><div class="flag"><span class="tick">✓</span>pass</div></div>
       </div>
-      <div class="verdict reveal d5">
-        <div class="answercard">
-          <div class="q">EXAMPLE · ANSWERED FROM A CURATED MART</div>
+
+      <div class="verdict reveal d2">
+        <div class="trace pass" id="trace-pass">
+          <div class="tl ok">✅ a question it can answer</div>
           <div class="qq">“Which animals live far longer than their body size predicts?”</div>
+          <div class="run">
+            <span class="rl">L1</span><span class="rl">L2</span><span class="rl">L3</span><span class="rl">L4</span><span class="rl">L5</span><span class="rl">L6</span><span class="rl">L7</span>
+          </div>
           <table>
             <tr><th>species</th><th>class</th><th>ratio</th></tr>
             <tr><td>Rougheye rockfish</td><td>Teleostei</td><td>13.1×</td></tr>
             <tr><td>Olm</td><td>Amphibia</td><td>10.4×</td></tr>
             <tr><td>Eastern box turtle</td><td>Reptilia</td><td>9.2×</td></tr>
           </table>
-          <span class="badge">trusted · traces to SQL</span>
+          <span class="badge">trusted · every number traces to SQL</span>
         </div>
-        <div class="card" style="display:flex;flex-direction:column;justify-content:center">
-          <div class="h" style="margin-bottom:8px"><span class="tagk">the point</span></div>
-          <p style="font-size:1.1rem;color:var(--ink)">A query that can't be validated is a <b style="color:var(--clay)">transparent failure</b> — not a confident guess. L3/L4 violations feed back to L2 in a bounded self-correction loop. If it still can't be proven safe, it says so.</p>
+        <div class="trace refuse" id="trace-refuse">
+          <div class="tl bad">🛑 a question it can’t answer safely</div>
+          <div class="qq">“average lifespan by <em>habitat</em>” <span class="muted">— there is no “habitat” column</span></div>
+          <div class="run">
+            <span class="rl">L1</span><span class="rl">L2</span><span class="rl stop">L3 ✗</span>
+          </div>
+          <div class="stopmsg">⛔ stopped at <b>L3</b> — “habitat” isn’t in the grounded schema. <b>It never touched the database.</b></div>
+          <span class="badge bad">transparent failure · refused, not guessed</span>
         </div>
       </div>
+      <p class="reveal d3" style="margin-top:18px;text-align:center;color:var(--ink-faint);font:600 13px/1.5 var(--mono);letter-spacing:.03em">L3 / L4 violations feed back to the generator in a bounded self-correction loop — it retries, then fails honestly.</p>
     </div>
   </section>
 
@@ -669,6 +710,35 @@ footer b{color:var(--ink-dim)}
     }
   });
   overlay.addEventListener('click',()=>overlay.classList.remove('open'));
+
+  // ── animate the L1→L7 pipeline + pass/refuse traces when #trust scrolls in ──
+  const reduceMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function runTraces(instant){
+    const pass=[...document.querySelectorAll('#trace-pass .rl')];
+    const refz=[...document.querySelectorAll('#trace-refuse .rl')];
+    const pc=document.getElementById('trace-pass'),rc=document.getElementById('trace-refuse');
+    if(instant){
+      pass.forEach(p=>p.classList.add('on'));refz.forEach(r=>r.classList.add('on'));
+      pc&&pc.classList.add('done');rc&&rc.classList.add('done');return;
+    }
+    pass.forEach((p,i)=>setTimeout(()=>p.classList.add('on'),150*i));
+    setTimeout(()=>pc&&pc.classList.add('done'),150*pass.length+120);
+    refz.forEach((r,i)=>setTimeout(()=>r.classList.add('on'),150*i));
+    setTimeout(()=>rc&&rc.classList.add('done'),150*refz.length+260);
+  }
+  function runPipeline(){
+    const rows=[...document.querySelectorAll('#trust-layers .l7')];
+    if(reduceMotion){rows.forEach(r=>r.classList.add('passed'));runTraces(true);return;}
+    rows.forEach((r,i)=>setTimeout(()=>r.classList.add('passed'),200*i));
+    setTimeout(runTraces,200*rows.length+200);
+  }
+  const trustEl=document.getElementById('trust');
+  if(trustEl){
+    let ran=false;
+    new IntersectionObserver((ents)=>{
+      ents.forEach(en=>{if(en.isIntersecting&&!ran){ran=true;runPipeline();}});
+    },{threshold:.32}).observe(trustEl);
+  }
 })();
 </script>
 </body>
