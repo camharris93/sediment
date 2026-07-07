@@ -413,6 +413,8 @@ python evals/harness.py    # replay the NL→SQL golden questions through L3–L
   cross-platform CI matrix, hardened read-only guard (blocks local-file reads / multi-statement /
   file writes), and `pip install` packaging (the `sediment` command + `sediment init`)
 
+Where it goes from here: **[ROADMAP.md](ROADMAP.md)**. Want to help: **[CONTRIBUTING.md](CONTRIBUTING.md)**.
+
 ## Decisions taken (PRD §11 open questions)
 
 - **Visualization → Streamlit** for v1: pure-Python, guaranteed-green offline, no

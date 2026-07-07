@@ -439,9 +439,9 @@ with tab_ask:
                 # Make the answer available to the Build tab (self-contained SQL) and
                 # the chart seeder.
                 if resp.kind == "answer" and resp.mh and resp.mh.sql:
-                    from engine.query.grounding import inline_synthetic_ctes
-                    ctx_syn = session.base_ctx().with_synthetic_tables(session.prior_synthetics())
-                    inlined = inline_synthetic_ctes(resp.mh.sql, ctx_syn)
+                    # Use the just-appended turn so promotion SQL includes
+                    # within-turn hop deps, but not the answer's own turn alias.
+                    inlined = session.self_contained_sql_for_turn(session.turns[-1])
                     st.session_state.last_answer = {"q": msg, "sql": inlined}
                     if is_build_mode() and st.button("📈 Chart this in the Report"):
                         st.session_state.report_seed = {"sql": inlined, "instruction": msg, "title": msg[:60]}
