@@ -101,6 +101,36 @@ class Session:
     def prior_synthetics(self) -> list[TableInfo]:
         return [t.synthetic for t in self.turns if t.synthetic is not None]
 
+    def synthetics_before(self, turn_index: int) -> list[TableInfo]:
+        """Synthetic result tables from turns before `turn_index`.
+
+        This is used when promoting a specific answer into a model. The answer's
+        own turn-level synthetic (`turn_<N>_result`) is just an alias for the
+        answer itself, so including it while inlining that same answer can create
+        duplicate/shadowing CTE names. Earlier turns remain valid dependencies.
+        """
+        return [t.synthetic for t in self.turns
+                if t.index < turn_index and t.synthetic is not None]
+
+    def self_contained_sql_for_turn(self, turn: Turn) -> str | None:
+        """Return executable SQL for a turn with all synthetic deps inlined.
+
+        A promoted model must not reference ephemeral `hop_<N>_result` or
+        conversation `turn_<N>_result` tables. For a multi-hop turn, the display
+        SQL can still reference earlier hop outputs; include those hop synthetics
+        explicitly, plus any prior-turn synthetics the question depended on.
+        """
+        sql = getattr(turn.result, "sql", None)
+        if not sql:
+            return None
+        hop_synthetics = [
+            h.synthetic for h in getattr(turn.result, "hops", [])
+            if getattr(h, "synthetic", None) is not None
+        ]
+        ctx = self.base_ctx().with_synthetic_tables(
+            self.synthetics_before(turn.index) + hop_synthetics)
+        return inline_synthetic_ctes(sql, ctx)
+
     def history_for_prompt(self) -> list[dict[str, Any]]:
         """Compact per-turn summaries the intent/planner layers embed so they can
         resolve references like 'those', 'now just X', 'that ranking'."""

@@ -96,10 +96,11 @@ def handle_message(session: Session, message: str, *, build_mode: bool,
                                      "app (`python run.py dashboard`) to build.")
         # Make the SQL self-contained: inline any conversational/hop synthetic
         # tables (turn_N_result / hop_N_result) it references, so the committed
-        # model has no dangling refs.
-        from .grounding import inline_synthetic_ctes
-        ctx_syn = session.base_ctx().with_synthetic_tables(session.prior_synthetics())
-        sql = inline_synthetic_ctes(last.result.sql, ctx_syn)
+        # model has no dangling refs. Exclude the answer's own turn alias.
+        sql = session.self_contained_sql_for_turn(last)
+        if not sql:
+            return ChatResponse(kind="error",
+                                text="Build failed: the last answer has no SQL to promote.")
         sample = last.result.rows[:8]
         name = cls.get("model_name") or _auto_name(last.question)
         mode = cls.get("mode") or "save"
