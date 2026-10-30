@@ -96,6 +96,8 @@ Nine of the 21 answer-key queries failed L3 before I alias-qualified every colum
 
 ## Deviations from the design (logged as protocol deviations)
 
+- **2026-10-30, Step 0 (before any live run):** `run.py` `_dataset_select` used `--select <dataset>__*`, which matches nothing on dbt 1.11 (the fqn glob runs against the full dotted path), so `up saasco` reported green while building no models. Changed to `*.<dataset>__*`. `budget.py` `PRICES` gained the current model family; the prices for the models this experiment uses (sonnet-4-6, haiku-4-5) were already right. No judge thresholds, prompts or generator code touched.
+
 - **S3 magnitude:** about 50% of EU 2026 churners have 2+ failed attempts (observed 0.508 dev, 0.554 LATAM holdout, against ~4% elsewhere), not the designed ~70%. Reaching 70% needed EU churn to roughly quadruple, which swamped every other 2026 metric. Failures also hit only accounts at least 100 days old (card-on-file expiry), which keeps S3 out of 90-day new-account metrics and so out of S6's way.
 - **S2 magnitude:** the starter post/pre 90-day churn ratio is 1.40, against a 1.08 control in growth + pro. That's a diff-in-diff of about 1.3x, not 1.8x.
 - **S6 is "mix contributes", not "purely mix".** Other stories also move channel rates (S2 hits new starters in every channel). The answer key states the observed absolute mix effect (S6.t4: +1.2 pp dev, +1.0 pp holdout) instead of claiming every channel is flat.
