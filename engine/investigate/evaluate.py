@@ -8,6 +8,7 @@ is a logged protocol deviation (RESULTS.md).
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any
@@ -76,6 +77,21 @@ def norm(v: Any) -> str:
     if isinstance(v, (date, datetime)):
         return v.isoformat()[:10]
     return str(v).strip().lower()
+
+
+_LABEL_TOKENS = re.compile(r"[a-z0-9]+")
+
+
+def label_key(v: Any) -> tuple[str, ...]:
+    """Format-tolerant key for a group label: the sorted alphanumeric tokens.
+    'Q2-2026', 'q2 2026' and '2026-Q2' share a key; '1-6' and '1-3 months' do not.
+    Protocol deviation 2026-10-30 (see docs/investigate.md): the first live run lost
+    3 of 9 cuts to label punctuation alone."""
+    return tuple(sorted(_LABEL_TOKENS.findall(norm(v))))
+
+
+def same_label(x: Any, y: Any) -> bool:
+    return norm(x) == norm(y) or label_key(x) == label_key(y)
 
 
 def to_float(v: Any) -> float | None:
@@ -184,11 +200,11 @@ def split_arms(cut_id: str, t: TestSpec, rows: list[dict], cols: dict[str, str])
         gc = cols.get(t.group_col) if t.group_col else None
         if gc is None:
             return "group_diff needs group_col"
-        a_rows = [r for r in rows if norm(r.get(gc)) == norm(t.a)]
+        a_rows = [r for r in rows if same_label(r.get(gc), t.a)]
         if norm(t.b) == REST:
-            b_rows = [r for r in rows if norm(r.get(gc)) != norm(t.a)]
+            b_rows = [r for r in rows if not same_label(r.get(gc), t.a)]
         else:
-            b_rows = [r for r in rows if norm(r.get(gc)) == norm(t.b)]
+            b_rows = [r for r in rows if same_label(r.get(gc), t.b)]
         if not a_rows or not b_rows:
             seen = sorted({norm(r.get(gc)) for r in rows})[:12]
             return f"no rows for {t.group_col}={t.a!r} vs {t.b!r} (values seen: {seen})"
@@ -200,7 +216,7 @@ def split_arms(cut_id: str, t: TestSpec, rows: list[dict], cols: dict[str, str])
             return "before_after needs time_col and split_at"
         if t.group_col and t.a is not None:   # optional segment filter
             gc = cols.get(t.group_col)
-            rows = [r for r in rows if gc and norm(r.get(gc)) == norm(t.a)]
+            rows = [r for r in rows if gc and same_label(r.get(gc), t.a)]
         split = iso_period(t.split_at)
         periods = [(iso_period(r.get(tc)), r) for r in rows]
         if any(p is None for p, _ in periods) or split is None:
@@ -259,7 +275,7 @@ def evaluate(cut: Cut, r: CutResult | None, cfg: JudgeConfig = DEFAULT_JUDGE) ->
     if t.kind == "threshold":
         rows = r.rows
         if t.group_col and t.a is not None:
-            rows = [x for x in rows if norm(x.get(cols[t.group_col])) == norm(t.a)]
+            rows = [x for x in rows if same_label(x.get(cols[t.group_col]), t.a)]
         if not rows:
             return _untestable(cut.id, f"no rows for {t.group_col}={t.a!r}")
         arm = aggregate_arm(cut.id, "value", rows, cols[t.value_col], cols.get(t.n_col) if t.n_col else None,

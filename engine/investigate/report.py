@@ -24,17 +24,29 @@ FINDINGS_START, FINDINGS_END = "<!-- findings:start -->", "<!-- findings:end -->
 
 _NUM = re.compile(r"(?<![\w.])[+-]?\d(?:[\d,]*\d)?(?:\.\d+)?%?")
 _YEARISH = re.compile(r"^(19|20)\d\d$")
+_QUOTED = re.compile(r"'[^'\n]*'")   # a quoted group label inside a Python-authored reason
 
 
-def mask_numerals(text: str, allowed: set[str] | None = None) -> str:
+def mask_numerals(text: str, allowed: set[str] | None = None, *, keep_quoted: bool = False) -> str:
     """Keep years and traceable tokens; replace every other numeral with `#`.
-    (Identifiers like Q2 or h1 are safe: the pattern skips digits glued to a word.)"""
+    (Identifiers like Q2 or h1 are safe: the pattern skips digits glued to a word.)
+    `keep_quoted` leaves 'quoted' spans alone: only for Python-authored reason
+    strings, where a quoted span is a group label the judge saw, never a number
+    it computed. Planner text (statements) must not use it."""
     allowed = allowed or set()
 
     def sub(m: re.Match) -> str:
         tok = m.group(0)
         return tok if _YEARISH.match(tok) or tok in allowed or tok.lstrip("+") in allowed else "#"
-    return _NUM.sub(sub, text)
+    if not keep_quoted:
+        return _NUM.sub(sub, text)
+    parts, last = [], 0
+    for q in _QUOTED.finditer(text):
+        parts.append(_NUM.sub(sub, text[last:q.start()]))
+        parts.append(q.group(0))
+        last = q.end()
+    parts.append(_NUM.sub(sub, text[last:]))
+    return "".join(parts)
 
 
 def _cells_line(cells: list[EvidenceCell]) -> str:
@@ -49,7 +61,7 @@ def _cells_line(cells: list[EvidenceCell]) -> str:
 
 def _finding_block(f: Finding, inv: Investigation, allowed: set[str]) -> list[str]:
     out = [f"#### {f.id} · {mask_numerals(f.statement)}", ""]
-    seg = ", ".join(f"{k} = {v}" for k, v in f.claim.segment.items()) or "(none)"
+    seg = ", ".join(f"{k} = `{v}`" for k, v in f.claim.segment.items()) or "(none)"
     out.append(f"- **Claim:** `{f.claim.metric}` is **{f.claim.direction}** for {seg} "
                f"· dimensions: {', '.join(f'`{d}`' for d in f.claim.dimensions)}")
     if f.judged_label and f.judged_label != f.label:
@@ -59,7 +71,7 @@ def _finding_block(f: Finding, inv: Investigation, allowed: set[str]) -> list[st
         badge = r.trust_badge if r else "-"
         out.append(f"- `{v.cut_id}` → **{v.label}** (badge `{badge}`): {_cells_line(v.evidence) or v.reason}")
         if v.label in ("untestable",):
-            out.append(f"  - {mask_numerals(v.reason, allowed)}")
+            out.append(f"  - {mask_numerals(v.reason, allowed, keep_quoted=True)}")
     for s in f.skeptic:
         line = f"- Skeptic `{s.kind}`"
         if s.confounder:
@@ -68,7 +80,7 @@ def _finding_block(f: Finding, inv: Investigation, allowed: set[str]) -> list[st
         if s.evidence:
             line += ": " + _cells_line(s.evidence)
         out.append(line)
-        out.append(f"  - {mask_numerals(s.reason, allowed)}")
+        out.append(f"  - {mask_numerals(s.reason, allowed, keep_quoted=True)}")
     if f.note:
         out.append(f"- _{f.note}_")
     if f.sql:
@@ -160,6 +172,7 @@ def untraced_numbers(md: str, inv: Investigation, cfg: JudgeConfig = DEFAULT_JUD
     body = md.split(FINDINGS_START, 1)[1].split(FINDINGS_END, 1)[0]
     body = re.sub(r"<details>.*?</details>", " ", body, flags=re.S)
     body = re.sub(r"`[^`]*`", " ", body)
+    body = _QUOTED.sub(" ", body)                              # quoted group labels in reasons
     body = re.sub(r"\(([^()]*=[^()]*)\)", " ", body)          # (group=value) row keys
     body = re.sub(r"\b\d{4}-\d{2}(-\d{2})?\b", " ", body)      # dates
     body = re.sub(r"^#### \S+", " ", body, flags=re.M)        # finding ids

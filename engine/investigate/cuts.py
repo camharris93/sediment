@@ -16,7 +16,7 @@ from typing import Any
 from .._llm import usage_meter
 from ..query.grounding import GroundingContext
 from ..query.trace import TraceEvent
-from .types import Cut, CutResult
+from .types import REST, Cut, CutResult
 
 EventCallback = Callable[[TraceEvent], None]
 
@@ -52,7 +52,21 @@ def pipeline_question(cut: Cut, definitions: list[dict]) -> str:
         q += f"\nDefinitions in force: {defs}"
     q += (f"\nReturn exactly these columns: {', '.join(cut.expected_columns)}. "
           f"One row per {cut.grain}. Aggregate in SQL; do not return raw rows.")
+    q += arm_labels_text(cut)
     return q
+
+
+def arm_labels_text(cut: Cut) -> str:
+    """The TestSpec names the group labels the judge will look for; L2 never saw
+    them, so it invented its own ('q2 2026' for 'Q2-2026', four tenure buckets
+    for two). Protocol deviation 2026-10-30 (docs/investigate.md): state them."""
+    t = cut.test
+    if t is None or not t.group_col or t.a is None:
+        return ""
+    if t.kind == "group_diff" and t.b is not None and str(t.b).strip().lower() != REST:
+        return (f" The `{t.group_col}` column must contain the values {t.a!r} and {t.b!r} "
+                f"(use these exact labels for the two groups being compared).")
+    return f" The `{t.group_col}` column must contain the value {t.a!r} (use this exact label for that group)."
 
 
 def _tagger(cut_id: str, on_event: EventCallback | None) -> EventCallback | None:
