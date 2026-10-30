@@ -77,3 +77,15 @@ jobs:
         # Replays known-good SQL through the deterministic trust layers (L3-L6) and
         # checks curated result values + that adversarial SQL is refused. No LLM.
         run: python evals/harness.py
+
+      - name: investigate — planted-truth datasets build + truths reproduce (no key)
+        # The seeded saasco dev/holdout data ships with the branch; every answer-key
+        # truth must reproduce through L3-L5 on what `up` built.
+        run: |
+          python run.py up saasco
+          python run.py up saasco_holdout
+          python evals/harness.py --investigate --truths --dataset saasco
+          python evals/harness.py --investigate --truths --dataset saasco_holdout
+
+      - name: investigate — offline demo (reference plans through judge + skeptic, no LLM)
+        run: python evals/investigations/demo.py

@@ -264,6 +264,14 @@ a human judgment call.
 
 ---
 
+## Experimental: `investigate` (branch only)
+
+`sediment investigate "why is churn up in Q2 2026?" saasco` runs a hypothesis → cuts →
+deterministic verdicts → skeptic → memory loop on top of L1–L7, evaluated against a
+seeded dataset with planted churn stories. The LLM proposes; Python labels. Key-free
+demo: `python run.py up saasco && python run.py up saasco_holdout && python run.py
+investigate-demo`. Design, build notes and status: [`docs/investigate.md`](docs/investigate.md).
+
 ## The AI layers
 
 1. **Build-time copilot** (`engine/scaffold.py`) — profiles the source and proposes a

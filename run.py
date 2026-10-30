@@ -12,6 +12,7 @@ directly:
     python run.py ask "question"# NL->SQL over the marts (needs a key)
     python run.py investigate "why is churn up?" saasco   # hypothesis->cuts->verdicts
     python run.py findings show saasco                    # the dataset's findings memory
+    python run.py investigate-demo                        # offline demo (no key)
 
 Every target takes an optional dataset name (default: $DATASET or "anage").
 """
@@ -169,6 +170,10 @@ def t_investigate(dataset: str, question: str | None = None, *flags: str) -> Non
     _run([PY, "-m", "engine.investigate.cli", question, "--dataset", dataset, *flags])
 
 
+def t_investigate_demo(dataset: str) -> None:
+    _run([PY, str(REPO_ROOT / "evals" / "investigations" / "demo.py")])
+
+
 def t_findings(dataset: str, *args: str) -> None:
     _run([PY, "-m", "engine.investigate.memory", *args, "--dataset", dataset])
 
@@ -238,7 +243,7 @@ TARGETS = {
     "dashboard": t_dashboard, "scaffold": t_scaffold,
     "orchestrate": t_orchestrate, "ask": t_ask, "clean": t_clean,
     "init": t_init, "generate": t_generate, "investigate": t_investigate,
-    "findings": t_findings,
+    "findings": t_findings, "investigate-demo": t_investigate_demo,
 }
 
 

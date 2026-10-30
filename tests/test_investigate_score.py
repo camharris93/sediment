@@ -85,3 +85,10 @@ def test_reference_plans_replay_as_documented(plan, expect):
     assert untraced_numbers(render(inv), inv) == []
     sc = score_investigation(inv)
     assert sc["n_false_findings"] == 0 and sc["traceability"] == 1.0
+
+
+def test_spearman():
+    from evals.investigations.ratings import spearman
+    assert spearman([1, 2, 3, 4], [10, 20, 30, 40]) == 1.0
+    assert spearman([1, 2, 3, 4], [4, 3, 2, 1]) == -1.0
+    assert spearman([1, 2], [1, 2]) is None

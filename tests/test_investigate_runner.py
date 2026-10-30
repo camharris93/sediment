@@ -150,3 +150,25 @@ def test_proposal_is_written_but_findings_yml_is_not(demo, monkeypatch, tmp_path
     mem_dir = tmp_path / "mem"
     assert (mem_dir / "findings.proposed" / f"{inv.run_id}.yml").exists()
     assert not (mem_dir / "findings.yml").exists()
+
+
+def test_b2_baseline_runs_model_sql_through_l3_l5_and_keeps_its_labels(demo, monkeypatch, tmp_path):
+    from engine import _llm
+    from engine.investigate.baselines import run_b2
+
+    payload = {"findings": [
+        {"statement": "assisted churn more", "label": "confirmed", "sql": POOLED,
+         "claim": {"metric": "logo_churn_rate", "dimensions": ["sa"], "segment": {"sa": True}, "direction": "higher"}},
+        {"statement": "bad sql", "label": "confirmed", "sql": "SELECT nope FROM demo_marts.mart_months",
+         "claim": {"metric": "other", "dimensions": ["sa"], "segment": {}, "direction": "higher"}}]}
+
+    def complete(*, system, user, model=None, max_tokens=4096, cache_system=True):
+        assert "senior data analyst" in system and "demo_marts.mart_months" in system
+        u = LLMUsage(model=model or "m", input_tokens=50, output_tokens=50)
+        _llm.record_usage(u)
+        return json.dumps(payload), u
+    monkeypatch.setattr("engine._llm.complete", complete)
+    inv = run_b2("q", "demo", demo, out_dir=tmp_path)
+    assert [f.label for f in inv.findings] == ["confirmed", "untestable"]
+    assert inv.findings[0].evidence and inv.usage["calls"] == 1
+    assert (tmp_path / inv.run_id / "report.md").exists()
