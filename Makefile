@@ -6,7 +6,7 @@
 PY ?= python
 DATASET ?= anage
 
-.PHONY: up download load profile run test docs dashboard scaffold orchestrate ask clean help
+.PHONY: up download load profile run test docs dashboard scaffold orchestrate ask clean investigate help
 
 up:          ; $(PY) run.py up $(DATASET)
 download:    ; $(PY) run.py download $(DATASET)
@@ -21,3 +21,4 @@ orchestrate: ; $(PY) run.py orchestrate $(DATASET)
 ask:         ; $(PY) run.py ask "$(Q)"
 clean:       ; $(PY) run.py clean $(DATASET)
 help:        ; $(PY) run.py help
+investigate: ; $(PY) run.py investigate "$(Q)" $(DATASET)

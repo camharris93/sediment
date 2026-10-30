@@ -83,7 +83,8 @@ def _format_input(question: str, intent: Intent | None, sql: str | None,
 
 def translate(*, question: str, status: str, intent: Intent | None, sql: str | None,
               provenance: Provenance | None, plausibility: PlausibilityResult | None,
-              refusal: Refusal | None, rows: list[dict[str, Any]], events: list[TraceEvent]) -> FinalAnswer:
+              refusal: Refusal | None, rows: list[dict[str, Any]], events: list[TraceEvent],
+              explain: bool = True) -> FinalAnswer:
     badge = _badge(status, events, plausibility, refusal)
     sample = rows[:10]
 
@@ -97,6 +98,8 @@ def translate(*, question: str, status: str, intent: Intent | None, sql: str | N
             f"The agent refused to execute the query: {refusal.message if refusal else 'refused'}.")
     elif intent is None:
         explanation = "Result produced, but no intent was available to summarize."
+    elif not explain:
+        explanation = f"Result produced ({len(rows)} rows). Explanation skipped (explain=False)."
     else:
         try:
             from .._llm import complete

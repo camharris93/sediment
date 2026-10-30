@@ -10,6 +10,8 @@ directly:
     python run.py scaffold      # AI build-time scaffolding (needs a key)
     python run.py orchestrate   # AI run/monitor/explain over the core (needs a key)
     python run.py ask "question"# NL->SQL over the marts (needs a key)
+    python run.py investigate "why is churn up?" saasco   # hypothesis->cuts->verdicts
+    python run.py findings show saasco                    # the dataset's findings memory
 
 Every target takes an optional dataset name (default: $DATASET or "anage").
 """
@@ -85,12 +87,20 @@ def t_profile(dataset: str) -> None:
     _run([PY, "-m", "engine.profile", dataset])
 
 
+def _dataset_select(dataset: str) -> list[str]:
+    # Every dataset's models are named `<dataset>__*` (the same convention the
+    # .gitignore keys on), so scope dbt to them. Without this, `up anage` on a
+    # warehouse that has never loaded another dataset's raw schema fails on that
+    # dataset's models.
+    return ["--select", f"{dataset}__*"]
+
+
 def t_dbt_run(dataset: str) -> None:
-    _run(_dbt_cmd() + ["run"], cwd=DBT_PROJECT_DIR, env=_dbt_env())
+    _run(_dbt_cmd() + ["run", *_dataset_select(dataset)], cwd=DBT_PROJECT_DIR, env=_dbt_env())
 
 
 def t_dbt_test(dataset: str) -> None:
-    _run(_dbt_cmd() + ["test"], cwd=DBT_PROJECT_DIR, env=_dbt_env())
+    _run(_dbt_cmd() + ["test", *_dataset_select(dataset)], cwd=DBT_PROJECT_DIR, env=_dbt_env())
 
 
 def t_docs(dataset: str) -> None:
@@ -141,6 +151,26 @@ def t_ask(dataset: str, question: str | None = None) -> None:
     if question:
         cmd.append(question)
     _run(cmd)
+
+
+def t_generate(dataset: str, *flags: str) -> None:
+    """Regenerate a synthetic dataset that ships a seeded `generate.py`."""
+    gen = load_dataset_config(dataset).dir / "generate.py"
+    if not gen.exists():
+        print(f"[generate] '{dataset}' has no generate.py.")
+        raise SystemExit(2)
+    _run([PY, str(gen), *flags])
+
+
+def t_investigate(dataset: str, question: str | None = None, *flags: str) -> None:
+    if not question:
+        print('Usage: python run.py investigate "<question>" [dataset] [--config full] ...')
+        raise SystemExit(2)
+    _run([PY, "-m", "engine.investigate.cli", question, "--dataset", dataset, *flags])
+
+
+def t_findings(dataset: str, *args: str) -> None:
+    _run([PY, "-m", "engine.investigate.memory", *args, "--dataset", dataset])
 
 
 def t_init(target_dir: str) -> None:
@@ -207,7 +237,8 @@ TARGETS = {
     "docs": t_docs, "docs-serve": t_docs_serve, "up": t_up,
     "dashboard": t_dashboard, "scaffold": t_scaffold,
     "orchestrate": t_orchestrate, "ask": t_ask, "clean": t_clean,
-    "init": t_init,
+    "init": t_init, "generate": t_generate, "investigate": t_investigate,
+    "findings": t_findings,
 }
 
 
@@ -238,12 +269,34 @@ def main(argv: list[str]) -> int:
         t_ask(dataset, question)
         return 0
 
+    # `investigate "<question>" [dataset] [--flags ...]` — question first, then an
+    # optional dataset; the dataset is passed explicitly (unlike `ask`).
+    if target == "investigate":
+        if not rest:
+            t_investigate(active_dataset())
+        question, tail = rest[0], rest[1:]
+        dataset = tail[0] if tail and not tail[0].startswith("-") else active_dataset()
+        flags = tail[1:] if tail and not tail[0].startswith("-") else tail
+        t_investigate(dataset, question, *flags)
+        return 0
+
+    # `findings <show|accept> [dataset] [run_id] [--flags]`
+    if target == "findings":
+        if not rest:
+            print("Usage: python run.py findings show [dataset] | accept <dataset> <run_id> [--ids ...]")
+            return 2
+        sub, tail = rest[0], rest[1:]
+        dataset = tail[0] if tail and not tail[0].startswith("-") else active_dataset()
+        tail = tail[1:] if tail and not tail[0].startswith("-") else tail
+        t_findings(dataset, sub, *tail)
+        return 0
+
     # Split a positional dataset name from any -/-- flags (e.g. scaffold mydata
     # --write, or orchestrate anage --break).
     positional = [a for a in rest if not a.startswith("-")]
     flags = [a for a in rest if a.startswith("-")]
     dataset = positional[0] if positional else active_dataset()
-    if target in ("scaffold", "orchestrate"):
+    if target in ("scaffold", "orchestrate", "generate"):
         fn(dataset, *flags)
         return 0
     fn(dataset)

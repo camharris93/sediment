@@ -1,0 +1,92 @@
+version: 2
+
+models:
+  - name: saasco__stg_accounts
+    description: "One row per customer account."
+    columns:
+      - name: account_id
+        data_tests: [not_null, unique]
+      - name: signup_date
+        data_tests: [not_null]
+      - name: company_size_band
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['1-10', '11-50', '51-200', '201+']
+      - name: region
+        data_tests: [not_null]
+      - name: acquisition_channel
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['organic', 'paid_search', 'paid_social', 'partner', 'outbound']
+      - name: sales_assisted
+        data_tests: [not_null]
+
+  - name: saasco__stg_subscriptions
+    description: "One row per subscription. A plan change ends one subscription and starts another; they can overlap by a few days."
+    columns:
+      - name: subscription_id
+        data_tests: [not_null, unique]
+      - name: account_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('saasco__stg_accounts')
+                field: account_id
+      - name: plan_tier
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['starter', 'growth', 'pro']
+      - name: billing_interval
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['monthly', 'annual']
+      - name: start_date
+        data_tests: [not_null]
+      - name: status
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['active', 'canceled']
+
+  - name: saasco__stg_invoices
+    description: "One row per payment ATTEMPT. Failed retries carry the full amount; only status = 'paid' rows are revenue."
+    columns:
+      - name: invoice_id
+        data_tests: [not_null, unique]
+      - name: subscription_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('saasco__stg_subscriptions')
+                field: subscription_id
+      - name: status
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['paid', 'failed', 'refunded']
+
+  - name: saasco__stg_usage_weekly
+    description: "One row per account per active week."
+    columns:
+      - name: usage_id
+        data_tests: [not_null, unique]
+      - name: week_start
+        data_tests: [not_null]
+
+  - name: saasco__stg_support_tickets
+    description: "One row per support ticket."
+    columns:
+      - name: ticket_id
+        data_tests: [not_null, unique]
+      - name: category
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['billing', 'bug', 'how_to', 'feature_request']

@@ -108,7 +108,10 @@ def _generate_validated(intent: Intent, ctx: GroundingContext, events, on_event,
 def run_to_executed_answer(question: str, ctx: GroundingContext, *,
                            max_retries: int = MAX_RETRIES,
                            on_event: EventCallback | None = None,
-                           history: list[dict] | None = None) -> PipelineResult:
+                           history: list[dict] | None = None,
+                           explain: bool = True) -> PipelineResult:
+    """`explain=False` skips the L7 LLM prose (the trust badge is deterministic and
+    unchanged) — for callers like `investigate` that render their own report."""
     events: list[TraceEvent] = []
 
     _emit(events, on_event, "layer_start", LayerId.L1)
@@ -124,7 +127,7 @@ def run_to_executed_answer(question: str, ctx: GroundingContext, *,
         _emit(events, on_event, "final_answer", None, status="transparent_failure", attempts=loop.attempts)
         final = translate(question=question, status="transparent_failure", intent=intent,
                           sql=loop.sql, provenance=None, plausibility=None, refusal=None,
-                          rows=[], events=events)
+                          rows=[], events=events, explain=explain)
         return PipelineResult("transparent_failure", question, intent=intent, sql=loop.sql,
                               final_answer=final, attempts=loop.attempts, events=events)
 
@@ -136,7 +139,7 @@ def run_to_executed_answer(question: str, ctx: GroundingContext, *,
               refusal=outcome.refusal.to_dict() if outcome.refusal else {})
         final = translate(question=question, status="refused", intent=intent, sql=loop.sql,
                           provenance=None, plausibility=None, refusal=outcome.refusal,
-                          rows=[], events=events)
+                          rows=[], events=events, explain=explain)
         return PipelineResult("refused", question, intent=intent, sql=loop.sql,
                               refusal=outcome.refusal, final_answer=final,
                               attempts=loop.attempts, events=events)
@@ -157,7 +160,7 @@ def run_to_executed_answer(question: str, ctx: GroundingContext, *,
     _emit(events, on_event, "layer_start", LayerId.L7)
     final = translate(question=question, status="executed", intent=intent, sql=loop.sql,
                       provenance=outcome.provenance, plausibility=plausibility, refusal=None,
-                      rows=outcome.rows, events=events)
+                      rows=outcome.rows, events=events, explain=explain)
     _emit(events, on_event, "layer_result", LayerId.L7, trust_badge=final.trust_badge.value)
     _emit(events, on_event, "final_answer", None, status="executed", trust_badge=final.trust_badge.value)
 

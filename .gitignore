@@ -12,6 +12,11 @@ profile.json
 # committed. (To share a different dataset, that's a separate repo.)
 datasets/*
 !datasets/anage
+# investigate experiment (decision D1, this branch only): the seeded synthetic
+# saasco datasets ship so `up saasco` runs offline; proposals never do.
+!datasets/saasco
+!datasets/saasco_holdout
+datasets/*/findings.proposed/
 # Within AnAge: keep config + source data (so the worked example runs offline),
 # drop derived/generated artifacts and the re-downloadable zip.
 datasets/anage/profile.json
@@ -24,6 +29,11 @@ dbt_project/models/staging/*__*
 dbt_project/models/marts/*__*
 !dbt_project/models/staging/anage__*
 !dbt_project/models/marts/anage__*
+!dbt_project/models/staging/saasco*__*
+!dbt_project/models/marts/saasco*__*
+
+# investigate run outputs (reports, traces, eval scores)
+runs/
 
 # dbt
 dbt_project/target/

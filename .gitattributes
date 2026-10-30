@@ -15,3 +15,6 @@ Makefile text eol=lf
 *.duckdb   binary
 *.parquet  binary
 *.zip       binary
+
+# Generated synthetic data is hashed byte-for-byte by tests — never rewrite EOLs.
+datasets/saasco*/data/*.csv -text

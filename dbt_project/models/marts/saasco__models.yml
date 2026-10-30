@@ -1,0 +1,47 @@
+version: 2
+
+models:
+  - name: saasco__mart_account_months
+    description: >
+      One row per account per calendar month in which the account was subscribed.
+      Churn is account-level: is_churn_month is true in the month the account's
+      last subscription ends. Plan changes are not churn.
+    columns:
+      - name: account_month_id
+        data_tests: [not_null, unique]
+      - name: tenure_month
+        description: "1 in the signup month."
+        data_tests: [not_null]
+      - name: mrr
+        description: "From the latest PAID invoice row of the subscription in force (annual / 12). Failed attempts are excluded."
+        data_tests: [not_null]
+      - name: failed_attempts_30d
+        description: "Failed payment attempts in the last 30 days of the month."
+        data_tests: [not_null]
+      - name: plan_tier
+        data_tests: [not_null]
+
+  - name: saasco__mart_subscription_lifecycle
+    description: "One row per subscription."
+    columns:
+      - name: subscription_id
+        data_tests: [not_null, unique]
+      - name: ended_by
+        description: "null while active; plan_change when a successor subscription started before it ended; otherwise churn."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['churn', 'plan_change']
+      - name: churned_within_90d
+        description: "Ended within 90 days of start with no successor subscription (account churn)."
+        data_tests: [not_null]
+      - name: first_8wk_peak_active_users
+        description: "Max weekly active users in the subscription's first 8 weeks."
+      - name: failed_attempts_before_end
+        description: "Failed payment attempts in the 30 days up to end_date (null while active)."
+
+  - name: saasco__mart_monthly_kpis
+    description: "One row per month. starting_accounts = active on the 1st; logo_churn_rate = churned_accounts / starting_accounts."
+    columns:
+      - name: month
+        data_tests: [not_null, unique]

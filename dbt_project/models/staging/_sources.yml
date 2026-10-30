@@ -20,3 +20,26 @@ sources:
     description: Raw team_boxscores table.
   - name: player_boxscores
     description: Raw player_boxscores table.
+- name: saasco
+  schema: saasco_raw
+  description: Raw landing tables for the saasco dataset (engine/ingest.py).
+  tables:
+  - name: accounts
+    description: Raw accounts table.
+  - name: subscriptions
+    description: Raw subscriptions table.
+  - name: invoices
+    description: Raw invoices table.
+  - name: usage_weekly
+    description: Raw usage_weekly table.
+  - name: support_tickets
+    description: Raw support_tickets table.
+- name: saasco_holdout
+  schema: saasco_holdout_raw
+  description: Raw landing tables for the saasco_holdout dataset (engine/ingest.py).
+  tables:
+  - name: accounts
+  - name: subscriptions
+  - name: invoices
+  - name: usage_weekly
+  - name: support_tickets

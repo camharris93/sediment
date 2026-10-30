@@ -1,0 +1,17 @@
+# ─────────────────────────────────────────────────────────────────────────
+# saasco_holdout — synthetic B2B SaaS with PLANTED churn stories (see docs/investigate.md).
+# HOLDOUT variant: same schema, different magnitudes/dates/segments. Headline numbers come from here.
+# Regenerate (byte-identical for the same seed):
+#   python datasets/saasco/generate.py --variant holdout
+# ─────────────────────────────────────────────────────────────────────────
+name: saasco_holdout
+description: >
+  A B2B SaaS company's accounts, subscriptions, invoice payment attempts, weekly
+  product usage and support tickets, 2024-01 through 2026-06.
+
+tables:
+  - {source: data/accounts.csv,        table: accounts}
+  - {source: data/subscriptions.csv,   table: subscriptions}
+  - {source: data/invoices.csv,        table: invoices}
+  - {source: data/usage_weekly.csv,    table: usage_weekly}
+  - {source: data/support_tickets.csv, table: support_tickets}
