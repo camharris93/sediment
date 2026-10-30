@@ -15,10 +15,22 @@ from .._llm import UsageMeter
 # cache reads at 0.1x input. Verify against current Anthropic pricing before
 # trusting cost numbers; an unknown model falls back to DEFAULT_PRICE and the
 # run's usage records that it did.
+# Checked 2026-10-30 against Anthropic list prices (the Claude API skill's
+# table, cached 2026-10-06). Longest prefixes first: price_of() prefix-matches.
 PRICES: dict[str, tuple[float, float]] = {
+    "claude-fable-5-1": (10.0, 50.0),
+    "claude-fable-5": (10.0, 50.0),
+    "claude-opus-5-5": (4.0, 20.0),
+    "claude-opus-5": (5.0, 25.0),
+    "claude-opus-4-8": (5.0, 25.0),
+    "claude-opus-4-7": (5.0, 25.0),
+    "claude-opus-4-6": (5.0, 25.0),
     "claude-opus-4-5": (5.0, 25.0),
+    "claude-sonnet-5-5": (2.0, 10.0),
+    "claude-sonnet-5": (2.0, 10.0),
     "claude-sonnet-4-6": (3.0, 15.0),
     "claude-sonnet-4-5": (3.0, 15.0),
+    "claude-haiku-5-5": (0.10, 0.50),
     "claude-haiku-4-5": (1.0, 5.0),
 }
 DEFAULT_PRICE = (3.0, 15.0)

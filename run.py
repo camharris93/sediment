@@ -93,7 +93,10 @@ def _dataset_select(dataset: str) -> list[str]:
     # .gitignore keys on), so scope dbt to them. Without this, `up anage` on a
     # warehouse that has never loaded another dataset's raw schema fails on that
     # dataset's models.
-    return ["--select", f"{dataset}__*"]
+    # dbt's fqn selector globs against the full dotted path
+    # (`sediment.staging.saasco__stg_accounts`), so a bare `saasco__*` matches
+    # nothing on dbt >= 1.8 and `up` silently builds no models.
+    return ["--select", f"*.{dataset}__*"]
 
 
 def t_dbt_run(dataset: str) -> None:
