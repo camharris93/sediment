@@ -1,0 +1,26 @@
+# Open questions for the investigate evals. None names a mechanism. `relevant`
+# is each question's recall denominator (driver stories, plus S5 in its correct
+# direction); a true story found outside it is reported separately as "bonus".
+# Holdout overrides are per variant: the payment-failure story is in LATAM there,
+# and S4 does not exist (finding it is a false finding, so it is not "relevant").
+questions:
+  - id: Q1
+    question: "Why is churn up in Q2 2026?"
+    relevant: [S1, S6, S3, S7, D1]
+  - id: Q2
+    question: "What's driving churn among accounts that signed up in 2025?"
+    relevant: [S2, S4, S6, S1]
+    holdout: {relevant: [S2, S6, S1, S4]}
+  - id: Q3
+    question: "Why did churn in Europe jump this year?"
+    relevant: [S3, S7]
+    holdout: {question: "Why did churn in Latin America jump this year?"}
+  - id: Q4
+    question: "Does having a salesperson involved help retention?"
+    relevant: [S5]
+  - id: Q5
+    question: "What predicts which new accounts will churn in their first six months?"
+    relevant: [S4, S2, S6, D1]
+  - id: Q6
+    question: "Did anything change in early 2026 that we should worry about?"
+    relevant: [S3, S1, D1]

@@ -17,9 +17,11 @@ VAR = {
              FR="LATAM", CH="partner", PC="2025-03-01", MIX="2025-09-01", DEC_ATTR="region", DEC_VAL="APAC",
              s4_kind="absent"),
 }
-SPANS = ("select account_id, min(start_date) as first_start, "
-         "case when bool_or(end_date is null) then null else max(end_date) end as account_end "
-         "from {S}.stg_subscriptions group by account_id")
+# Every column is alias-qualified: L3 rejects some valid unqualified CTE SQL
+# (see docs/investigate.md "Findings while building").
+SPANS = ("select s.account_id, min(s.start_date) as first_start, "
+         "case when bool_or(s.end_date is null) then null else max(s.end_date) end as account_end "
+         "from {S}.stg_subscriptions s group by s.account_id")
 AM = ("with sp as (" + SPANS + "),\n"
       "m as (select cast(unnest(generate_series(date '2024-02-01', date '2026-06-01', interval 1 month)) as date) as m),\n"
       "am as (select a.company_size_band as b, a.sales_assisted as sa,\n"
@@ -43,17 +45,17 @@ def build(v):
               "{dimension_any: ['derived:*renew*', 'derived:*months_to*', 'derived:*anniversar*'], direction: higher}",
               "{dimension_any: [cohort_month, 'derived:*cohort*'], segment: {billing_interval: annual}, direction: higher}"],
       truths=[t("S1.t1","Renewal-month churn rate of annual subscriptions due to renew in 2026-Q2.",
-        q("with s as (select * from {S}.stg_subscriptions where billing_interval = 'annual'),\n"
-          "due as (select end_date, cast(unnest(generate_series(start_date + interval 12 month, date '2026-06-30', interval 12 month)) as date) as renewal from s)\n"
-          "select avg(case when end_date = renewal then 1.0 else 0.0 end) from due\n"
-          "where renewal between date '2026-04-01' and date '2026-06-30' and (end_date is null or end_date >= renewal)"),
+        q("with due as (select s.end_date, cast(unnest(generate_series(s.start_date + interval 12 month, date '2026-06-30', interval 12 month)) as date) as renewal\n"
+          "  from {S}.stg_subscriptions s where s.billing_interval = 'annual')\n"
+          "select avg(case when d.end_date = d.renewal then 1.0 else 0.0 end) from due d\n"
+          "where d.renewal between date '2026-04-01' and date '2026-06-30' and (d.end_date is null or d.end_date >= d.renewal)"),
           "tolerance_abs: 0.03"),
         t("S1.t2","Mean monthly logo churn rate, 2026-Q2 divided by 2026-Q1.",
         q("with sp as (" + SPANS + "),\n"
-          "m as (select cast(unnest(generate_series(date '2026-01-01', date '2026-06-01', interval 1 month)) as date) as m),\n"
-          "r as (select m.m, avg(case when sp.account_end >= m.m and sp.account_end < m.m + interval 1 month then 1.0 else 0.0 end) as rate\n"
-          "  from m join sp on sp.first_start < m.m and (sp.account_end is null or sp.account_end >= m.m) group by m.m)\n"
-          "select avg(rate) filter (where m >= date '2026-04-01') / avg(rate) filter (where m < date '2026-04-01') from r"),
+          "mo as (select cast(unnest(generate_series(date '2026-01-01', date '2026-06-01', interval 1 month)) as date) as m),\n"
+          "r as (select mo.m as month_start, avg(case when sp.account_end >= mo.m and sp.account_end < mo.m + interval 1 month then 1.0 else 0.0 end) as rate\n"
+          "  from mo join sp on sp.first_start < mo.m and (sp.account_end is null or sp.account_end >= mo.m) group by mo.m)\n"
+          "select avg(r.rate) filter (where r.month_start >= date '2026-04-01') / avg(r.rate) filter (where r.month_start < date '2026-04-01') from r"),
           "tolerance_rel: 0.10"),
         t("S1.t3","Annual subscriptions started in 2025-Q2 divided by those started in 2024-Q2.",
         q("select count(*) filter (where start_date between date '2025-04-01' and date '2025-06-30') * 1.0\n"
@@ -64,10 +66,10 @@ def build(v):
         return q("with sp as (" + SPANS + "),\n"
           "fs as (select s.plan_tier, s.billing_interval, s.start_date, sp.account_end from {S}.stg_subscriptions s\n"
           "  join sp on sp.account_id = s.account_id and s.start_date = sp.first_start),\n"
-          "c as (select start_date >= date '{PC}' as post, avg(case when account_end < start_date + interval 90 day then 1.0 else 0.0 end) as r\n"
-          "  from fs where billing_interval = 'monthly' and " + cond + "\n"
-          "  and start_date >= date '{PC}' - interval 6 month and start_date < date '{PC}' + interval 6 month group by 1)\n"
-          "select max(r) filter (where post) / max(r) filter (where not post) from c")
+          "c as (select fs.start_date >= date '{PC}' as post, avg(case when fs.account_end < fs.start_date + interval 90 day then 1.0 else 0.0 end) as r\n"
+          "  from fs where fs.billing_interval = 'monthly' and " + cond + "\n"
+          "  and fs.start_date >= date '{PC}' - interval 6 month and fs.start_date < date '{PC}' + interval 6 month group by 1)\n"
+          "select max(c.r) filter (where c.post) / max(c.r) filter (where not c.post) from c")
     stories.append(dict(id="S2", kind="driver",
       statement="A starter price increase on {PC} (grandfathered for existing subscriptions) splits cohorts: new starter accounts after the change churn early far more than the pre-change cohort, while existing starters are unaffected.".format(**v),
       mechanism="Starter list_price_monthly steps up for subscriptions starting on/after the change date; the post-change new cohort has a much higher 90-day churn hazard.",
@@ -75,8 +77,8 @@ def build(v):
       naive="Averaging old and new starters together ('starter churn barely moved').",
       match=["{dimension_any: [start_date, list_price_monthly, cohort_month, 'derived:*price*', 'derived:*cohort*', 'derived:*period*'], segment: {plan_tier: starter}, direction: higher}",
              "{metric_in: [early_churn_rate], dimension_any: [list_price_monthly, 'derived:*price*'], direction: higher}"],
-      truths=[t("S2.t1","Starter (monthly, new accounts) 90-day churn: 6 months after the price change / 6 months before.", s2sql("plan_tier = 'starter'"), "tolerance_rel: 0.15"),
-              t("S2.t2","Same ratio for growth + pro (the control: should be near 1).", s2sql("plan_tier <> 'starter'"), "tolerance_rel: 0.15")]))
+      truths=[t("S2.t1","Starter (monthly, new accounts) 90-day churn: 6 months after the price change / 6 months before.", s2sql("fs.plan_tier = 'starter'"), "tolerance_rel: 0.15"),
+              t("S2.t2","Same ratio for growth + pro (the control: should be near 1).", s2sql("fs.plan_tier <> 'starter'"), "tolerance_rel: 0.15")]))
     # S3
     s3base = ("with sp as (" + SPANS + "),\n"
           "ch as (select sp.account_id, sp.account_end, a.region from sp join {S}.stg_accounts a on a.account_id = sp.account_id\n"
@@ -113,11 +115,12 @@ def build(v):
         q("with sp as (" + SPANS + "),\n"
           "pk as (select sp.account_id, max(u.active_users) as peak from sp join {S}.stg_usage_weekly u\n"
           "  on u.account_id = sp.account_id and u.week_start < sp.first_start + interval 56 day group by sp.account_id),\n"
-          "fs as (select sp.*, s.billing_interval from sp join {S}.stg_subscriptions s on s.account_id = sp.account_id and s.start_date = sp.first_start),\n"
+          "fs as (select sp.account_id, sp.first_start, sp.account_end, s.billing_interval from sp\n"
+          "  join {S}.stg_subscriptions s on s.account_id = sp.account_id and s.start_date = sp.first_start),\n"
           "c as (select pk.peak <= 2 as low,\n"
           "  avg(case when fs.account_end >= fs.first_start + interval 1 month and fs.account_end < fs.first_start + interval 6 month then 1.0 else 0.0 end) as r\n"
-          "  from fs join pk using (account_id) where fs.billing_interval = 'monthly' and fs.first_start < date '2026-01-01' group by 1)\n"
-          "select max(r) filter (where low) / max(r) filter (where not low) from c"), "tolerance_rel: 0.15")])
+          "  from fs join pk on pk.account_id = fs.account_id where fs.billing_interval = 'monthly' and fs.first_start < date '2026-01-01' group by 1)\n"
+          "select max(c.r) filter (where c.low) / max(c.r) filter (where not c.low) from c"), "tolerance_rel: 0.15")])
     stories.append(s4)
     # S5
     stories.append(dict(id="S5", kind="trap",
@@ -132,7 +135,7 @@ def build(v):
               t("S5.t3","Account-month-weighted mean of the within-band ratio (sales-assisted / not).", q(AM + ", by_b as (select b, count(*) as n, avg(c) filter (where sa) as rs, avg(c) filter (where not sa) as rn from am group by b)\nselect sum(n * rs / rn) / sum(n) from by_b"), "tolerance_rel: 0.15")]))
     # S6
     s6base = ("with sp as (" + SPANS + "),\n"
-              "na as (select a.acquisition_channel as ch, sp.first_start, case when sp.account_end < sp.first_start + interval 90 day then 1.0 else 0.0 end as c\n"
+              "na as (select a.acquisition_channel as ch, sp.first_start as signup, case when sp.account_end < sp.first_start + interval 90 day then 1.0 else 0.0 end as c\n"
               "  from sp join {S}.stg_accounts a on a.account_id = sp.account_id)\n")
     stories.append(dict(id="S6", kind="driver",
       statement="Channel mix shift: from {MIX} the {CH} channel grows sharply as a share of new accounts. It churns about 2x other channels at a constant planted multiplier, so the shift alone raises blended new-account churn (other stories also move channel rates).".format(**v),
@@ -142,17 +145,17 @@ def build(v):
       match=["{{dimension_any: [acquisition_channel, channel], segment: {{'*channel': {CH}}}, direction: higher}}".format(**v),
              "{{metric_in: [new_account_share], segment: {{'*channel': {CH}}}, direction: higher}}".format(**v)],
       truths=[t("S6.t1","{CH} share of new accounts, 2024-01 through the month before the shift.".format(**v),
-                q(s6base + "select avg(case when ch = '{CH}' then 1.0 else 0.0 end) from na where first_start < date '{MIX}'"), "tolerance_abs: 0.03"),
+                q(s6base + "select avg(case when na.ch = '{CH}' then 1.0 else 0.0 end) from na where na.signup < date '{MIX}'"), "tolerance_abs: 0.03"),
               t("S6.t2","{CH} share of new accounts, 2026-01..2026-06.".format(**v),
-                q(s6base + "select avg(case when ch = '{CH}' then 1.0 else 0.0 end) from na where first_start >= date '2026-01-01'"), "tolerance_abs: 0.03"),
+                q(s6base + "select avg(case when na.ch = '{CH}' then 1.0 else 0.0 end) from na where na.signup >= date '2026-01-01'"), "tolerance_abs: 0.03"),
               t("S6.t3","90-day churn of new accounts (signup < 2026-04): {CH} / all other channels.".format(**v),
-                q(s6base + "select avg(c) filter (where ch = '{CH}') / avg(c) filter (where ch <> '{CH}') from na where first_start < date '2026-04-01'"), "tolerance_rel: 0.15"),
+                q(s6base + "select avg(na.c) filter (where na.ch = '{CH}') / avg(na.c) filter (where na.ch <> '{CH}') from na where na.signup < date '2026-04-01'"), "tolerance_rel: 0.15"),
               t("S6.t4","Mix effect: blended new-account 90-day churn at post-shift channel mix and PRE-shift channel rates, minus the pre-shift blended rate (absolute; > 0 means mix alone raises churn).",
-                q(s6base + ", g as (select ch, first_start >= date '{MIX}' as post, count(*) as n, avg(c) as r from na\n"
-                  "  where first_start >= date '2024-01-01' and first_start < date '2026-04-01' group by 1, 2),\n"
-                  "pre as (select ch, r from g where not post),\n"
-                  "w as (select ch, n * 1.0 / sum(n) over () as w from g where post)\n"
-                  "select (select sum(w.w * pre.r) from w join pre using (ch)) - (select sum(n * r) / sum(n) from g where not post)"), "tolerance_abs: 0.01")]))
+                q(s6base + ", g as (select na.ch, na.signup >= date '{MIX}' as post, count(*) as n, avg(na.c) as r from na\n"
+                  "  where na.signup >= date '2024-01-01' and na.signup < date '2026-04-01' group by 1, 2),\n"
+                  "pre as (select g.ch, g.r from g where not g.post),\n"
+                  "wt as (select g.ch, g.n * 1.0 / sum(g.n) over () as share from g where g.post)\n"
+                  "select (select sum(wt.share * pre.r) from wt join pre on pre.ch = wt.ch) - (select sum(g.n * g.r) / sum(g.n) from g where not g.post)"), "tolerance_abs: 0.01")]))
     # S7
     stories.append(dict(id="S7", kind="quirk",
       statement="invoices has one row per payment ATTEMPT. Summing invoices.amount without status = 'paid' (or summing subscription prices joined to invoices) inflates revenue/MRR; worst in {FR} 2026.".format(**v),

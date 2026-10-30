@@ -1,0 +1,10 @@
+# Findings memory for saasco — APPEND-ONLY, human-committed (docs/investigate.md §5.5).
+# Investigations only write findings.proposed/<run_id>.yml; add entries with
+#   python run.py findings accept saasco <run_id> [--ids p.f1,p.q1]
+version: 1
+dataset: saasco
+definitions: []
+findings: []
+data_quirks: []
+open_questions: []
+runs: []

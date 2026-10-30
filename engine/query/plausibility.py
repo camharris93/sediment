@@ -60,7 +60,9 @@ def _resolve_alias_map(ast: exp.Expression) -> dict[str, str]:
     outer = _outermost_select(ast)
     if outer is None:
         return out
-    from_clause = outer.args.get("from")
+    # sqlglot >= 28 names this arg "from_"; older releases "from". Missing it silently
+    # disables fan-out detection, so accept both.
+    from_clause = outer.args.get("from_") or outer.args.get("from")
     joins = outer.args.get("joins") or []
     tables: list[exp.Table] = []
     if from_clause is not None:

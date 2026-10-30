@@ -74,26 +74,27 @@ class UsageMeter:
                 "by_model": {m: u.to_dict() for m, u in self.by_model.items()}}
 
 
-_METER: contextvars.ContextVar[UsageMeter | None] = contextvars.ContextVar("sediment_usage_meter",
-                                                                           default=None)
+# A stack of active meters: a call is added to EVERY enclosing meter, so a
+# per-cut meter nested inside a per-investigation meter both see it.
+_METERS: contextvars.ContextVar[tuple[UsageMeter, ...]] = contextvars.ContextVar(
+    "sediment_usage_meters", default=())
 
 
 @contextmanager
 def usage_meter() -> Iterator[UsageMeter]:
-    """`with usage_meter() as m:` — every `complete()` inside adds to `m`. Nested
-    meters each see only their own block's calls."""
+    """`with usage_meter() as m:` — every `complete()` inside adds to `m` (and to
+    any meter it is nested in)."""
     m = UsageMeter()
-    token = _METER.set(m)
+    token = _METERS.set(_METERS.get() + (m,))
     try:
         yield m
     finally:
-        _METER.reset(token)
+        _METERS.reset(token)
 
 
 def record_usage(u: LLMUsage) -> None:
-    """Add a usage to the active meter (no-op when none is active)."""
-    m = _METER.get()
-    if m is not None:
+    """Add a usage to every active meter (no-op when none is active)."""
+    for m in _METERS.get():
         m.add(u)
 
 

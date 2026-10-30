@@ -41,20 +41,20 @@ stories:
       - id: S1.t1
         description: "Renewal-month churn rate of annual subscriptions due to renew in 2026-Q2."
         fixture_sql: |
-          with s as (select * from saasco_staging.stg_subscriptions where billing_interval = 'annual'),
-          due as (select end_date, cast(unnest(generate_series(start_date + interval 12 month, date '2026-06-30', interval 12 month)) as date) as renewal from s)
-          select avg(case when end_date = renewal then 1.0 else 0.0 end) from due
-          where renewal between date '2026-04-01' and date '2026-06-30' and (end_date is null or end_date >= renewal)
+          with due as (select s.end_date, cast(unnest(generate_series(s.start_date + interval 12 month, date '2026-06-30', interval 12 month)) as date) as renewal
+            from saasco_staging.stg_subscriptions s where s.billing_interval = 'annual')
+          select avg(case when d.end_date = d.renewal then 1.0 else 0.0 end) from due d
+          where d.renewal between date '2026-04-01' and date '2026-06-30' and (d.end_date is null or d.end_date >= d.renewal)
         observed: 0.2742
         tolerance_abs: 0.03
       - id: S1.t2
         description: "Mean monthly logo churn rate, 2026-Q2 divided by 2026-Q1."
         fixture_sql: |
-          with sp as (select account_id, min(start_date) as first_start, case when bool_or(end_date is null) then null else max(end_date) end as account_end from saasco_staging.stg_subscriptions group by account_id),
-          m as (select cast(unnest(generate_series(date '2026-01-01', date '2026-06-01', interval 1 month)) as date) as m),
-          r as (select m.m, avg(case when sp.account_end >= m.m and sp.account_end < m.m + interval 1 month then 1.0 else 0.0 end) as rate
-            from m join sp on sp.first_start < m.m and (sp.account_end is null or sp.account_end >= m.m) group by m.m)
-          select avg(rate) filter (where m >= date '2026-04-01') / avg(rate) filter (where m < date '2026-04-01') from r
+          with sp as (select s.account_id, min(s.start_date) as first_start, case when bool_or(s.end_date is null) then null else max(s.end_date) end as account_end from saasco_staging.stg_subscriptions s group by s.account_id),
+          mo as (select cast(unnest(generate_series(date '2026-01-01', date '2026-06-01', interval 1 month)) as date) as m),
+          r as (select mo.m as month_start, avg(case when sp.account_end >= mo.m and sp.account_end < mo.m + interval 1 month then 1.0 else 0.0 end) as rate
+            from mo join sp on sp.first_start < mo.m and (sp.account_end is null or sp.account_end >= mo.m) group by mo.m)
+          select avg(r.rate) filter (where r.month_start >= date '2026-04-01') / avg(r.rate) filter (where r.month_start < date '2026-04-01') from r
         observed: 1.1759
         tolerance_rel: 0.10
       - id: S1.t3
@@ -86,25 +86,25 @@ stories:
       - id: S2.t1
         description: "Starter (monthly, new accounts) 90-day churn: 6 months after the price change / 6 months before."
         fixture_sql: |
-          with sp as (select account_id, min(start_date) as first_start, case when bool_or(end_date is null) then null else max(end_date) end as account_end from saasco_staging.stg_subscriptions group by account_id),
+          with sp as (select s.account_id, min(s.start_date) as first_start, case when bool_or(s.end_date is null) then null else max(s.end_date) end as account_end from saasco_staging.stg_subscriptions s group by s.account_id),
           fs as (select s.plan_tier, s.billing_interval, s.start_date, sp.account_end from saasco_staging.stg_subscriptions s
             join sp on sp.account_id = s.account_id and s.start_date = sp.first_start),
-          c as (select start_date >= date '2025-07-01' as post, avg(case when account_end < start_date + interval 90 day then 1.0 else 0.0 end) as r
-            from fs where billing_interval = 'monthly' and plan_tier = 'starter'
-            and start_date >= date '2025-07-01' - interval 6 month and start_date < date '2025-07-01' + interval 6 month group by 1)
-          select max(r) filter (where post) / max(r) filter (where not post) from c
+          c as (select fs.start_date >= date '2025-07-01' as post, avg(case when fs.account_end < fs.start_date + interval 90 day then 1.0 else 0.0 end) as r
+            from fs where fs.billing_interval = 'monthly' and fs.plan_tier = 'starter'
+            and fs.start_date >= date '2025-07-01' - interval 6 month and fs.start_date < date '2025-07-01' + interval 6 month group by 1)
+          select max(c.r) filter (where c.post) / max(c.r) filter (where not c.post) from c
         observed: 1.3998
         tolerance_rel: 0.15
       - id: S2.t2
         description: "Same ratio for growth + pro (the control: should be near 1)."
         fixture_sql: |
-          with sp as (select account_id, min(start_date) as first_start, case when bool_or(end_date is null) then null else max(end_date) end as account_end from saasco_staging.stg_subscriptions group by account_id),
+          with sp as (select s.account_id, min(s.start_date) as first_start, case when bool_or(s.end_date is null) then null else max(s.end_date) end as account_end from saasco_staging.stg_subscriptions s group by s.account_id),
           fs as (select s.plan_tier, s.billing_interval, s.start_date, sp.account_end from saasco_staging.stg_subscriptions s
             join sp on sp.account_id = s.account_id and s.start_date = sp.first_start),
-          c as (select start_date >= date '2025-07-01' as post, avg(case when account_end < start_date + interval 90 day then 1.0 else 0.0 end) as r
-            from fs where billing_interval = 'monthly' and plan_tier <> 'starter'
-            and start_date >= date '2025-07-01' - interval 6 month and start_date < date '2025-07-01' + interval 6 month group by 1)
-          select max(r) filter (where post) / max(r) filter (where not post) from c
+          c as (select fs.start_date >= date '2025-07-01' as post, avg(case when fs.account_end < fs.start_date + interval 90 day then 1.0 else 0.0 end) as r
+            from fs where fs.billing_interval = 'monthly' and fs.plan_tier <> 'starter'
+            and fs.start_date >= date '2025-07-01' - interval 6 month and fs.start_date < date '2025-07-01' + interval 6 month group by 1)
+          select max(c.r) filter (where c.post) / max(c.r) filter (where not c.post) from c
         observed: 1.0785
         tolerance_rel: 0.15
   - id: S3
@@ -128,7 +128,7 @@ stories:
       - id: S3.t1
         description: "Share of EU accounts churned in 2026 with >= 2 failed attempts in the 30 days before churn."
         fixture_sql: |
-          with sp as (select account_id, min(start_date) as first_start, case when bool_or(end_date is null) then null else max(end_date) end as account_end from saasco_staging.stg_subscriptions group by account_id),
+          with sp as (select s.account_id, min(s.start_date) as first_start, case when bool_or(s.end_date is null) then null else max(s.end_date) end as account_end from saasco_staging.stg_subscriptions s group by s.account_id),
           ch as (select sp.account_id, sp.account_end, a.region from sp join saasco_staging.stg_accounts a on a.account_id = sp.account_id
             where sp.account_end >= date '2026-01-01'),
           f as (select ch.account_id, count(i.invoice_id) as n_failed from ch left join saasco_staging.stg_invoices i
@@ -140,7 +140,7 @@ stories:
       - id: S3.t2
         description: "Same share for all other regions."
         fixture_sql: |
-          with sp as (select account_id, min(start_date) as first_start, case when bool_or(end_date is null) then null else max(end_date) end as account_end from saasco_staging.stg_subscriptions group by account_id),
+          with sp as (select s.account_id, min(s.start_date) as first_start, case when bool_or(s.end_date is null) then null else max(s.end_date) end as account_end from saasco_staging.stg_subscriptions s group by s.account_id),
           ch as (select sp.account_id, sp.account_end, a.region from sp join saasco_staging.stg_accounts a on a.account_id = sp.account_id
             where sp.account_end >= date '2026-01-01'),
           f as (select ch.account_id, count(i.invoice_id) as n_failed from ch left join saasco_staging.stg_invoices i
@@ -152,7 +152,7 @@ stories:
       - id: S3.t3
         description: "Of those EU failed-payment churners, the share whose final cancel_reason is customer_request or null."
         fixture_sql: |
-          with sp as (select account_id, min(start_date) as first_start, case when bool_or(end_date is null) then null else max(end_date) end as account_end from saasco_staging.stg_subscriptions group by account_id),
+          with sp as (select s.account_id, min(s.start_date) as first_start, case when bool_or(s.end_date is null) then null else max(s.end_date) end as account_end from saasco_staging.stg_subscriptions s group by s.account_id),
           ch as (select sp.account_id, sp.account_end, a.region from sp join saasco_staging.stg_accounts a on a.account_id = sp.account_id
             where sp.account_end >= date '2026-01-01'),
           f as (select ch.account_id, count(i.invoice_id) as n_failed from ch left join saasco_staging.stg_invoices i
@@ -180,14 +180,15 @@ stories:
       - id: S4.t1
         description: "Monthly-billed new accounts (signup < 2026-01): churn in tenure months 2-6, low activation / high activation."
         fixture_sql: |
-          with sp as (select account_id, min(start_date) as first_start, case when bool_or(end_date is null) then null else max(end_date) end as account_end from saasco_staging.stg_subscriptions group by account_id),
+          with sp as (select s.account_id, min(s.start_date) as first_start, case when bool_or(s.end_date is null) then null else max(s.end_date) end as account_end from saasco_staging.stg_subscriptions s group by s.account_id),
           pk as (select sp.account_id, max(u.active_users) as peak from sp join saasco_staging.stg_usage_weekly u
             on u.account_id = sp.account_id and u.week_start < sp.first_start + interval 56 day group by sp.account_id),
-          fs as (select sp.*, s.billing_interval from sp join saasco_staging.stg_subscriptions s on s.account_id = sp.account_id and s.start_date = sp.first_start),
+          fs as (select sp.account_id, sp.first_start, sp.account_end, s.billing_interval from sp
+            join saasco_staging.stg_subscriptions s on s.account_id = sp.account_id and s.start_date = sp.first_start),
           c as (select pk.peak <= 2 as low,
             avg(case when fs.account_end >= fs.first_start + interval 1 month and fs.account_end < fs.first_start + interval 6 month then 1.0 else 0.0 end) as r
-            from fs join pk using (account_id) where fs.billing_interval = 'monthly' and fs.first_start < date '2026-01-01' group by 1)
-          select max(r) filter (where low) / max(r) filter (where not low) from c
+            from fs join pk on pk.account_id = fs.account_id where fs.billing_interval = 'monthly' and fs.first_start < date '2026-01-01' group by 1)
+          select max(c.r) filter (where c.low) / max(c.r) filter (where not c.low) from c
         observed: 2.0524
         tolerance_rel: 0.15
   - id: S5
@@ -211,7 +212,7 @@ stories:
       - id: S5.t1
         description: "Pooled monthly logo churn rate (account-months), sales-assisted / not."
         fixture_sql: |
-          with sp as (select account_id, min(start_date) as first_start, case when bool_or(end_date is null) then null else max(end_date) end as account_end from saasco_staging.stg_subscriptions group by account_id),
+          with sp as (select s.account_id, min(s.start_date) as first_start, case when bool_or(s.end_date is null) then null else max(s.end_date) end as account_end from saasco_staging.stg_subscriptions s group by s.account_id),
           m as (select cast(unnest(generate_series(date '2024-02-01', date '2026-06-01', interval 1 month)) as date) as m),
           am as (select a.company_size_band as b, a.sales_assisted as sa,
             case when sp.account_end >= m.m and sp.account_end < m.m + interval 1 month then 1.0 else 0.0 end as c
@@ -223,7 +224,7 @@ stories:
       - id: S5.t2
         description: "Number of size bands (of 4) in which sales-assisted churn is lower."
         fixture_sql: |
-          with sp as (select account_id, min(start_date) as first_start, case when bool_or(end_date is null) then null else max(end_date) end as account_end from saasco_staging.stg_subscriptions group by account_id),
+          with sp as (select s.account_id, min(s.start_date) as first_start, case when bool_or(s.end_date is null) then null else max(s.end_date) end as account_end from saasco_staging.stg_subscriptions s group by s.account_id),
           m as (select cast(unnest(generate_series(date '2024-02-01', date '2026-06-01', interval 1 month)) as date) as m),
           am as (select a.company_size_band as b, a.sales_assisted as sa,
             case when sp.account_end >= m.m and sp.account_end < m.m + interval 1 month then 1.0 else 0.0 end as c
@@ -236,7 +237,7 @@ stories:
       - id: S5.t3
         description: "Account-month-weighted mean of the within-band ratio (sales-assisted / not)."
         fixture_sql: |
-          with sp as (select account_id, min(start_date) as first_start, case when bool_or(end_date is null) then null else max(end_date) end as account_end from saasco_staging.stg_subscriptions group by account_id),
+          with sp as (select s.account_id, min(s.start_date) as first_start, case when bool_or(s.end_date is null) then null else max(s.end_date) end as account_end from saasco_staging.stg_subscriptions s group by s.account_id),
           m as (select cast(unnest(generate_series(date '2024-02-01', date '2026-06-01', interval 1 month)) as date) as m),
           am as (select a.company_size_band as b, a.sales_assisted as sa,
             case when sp.account_end >= m.m and sp.account_end < m.m + interval 1 month then 1.0 else 0.0 end as c
@@ -266,41 +267,41 @@ stories:
       - id: S6.t1
         description: "paid_social share of new accounts, 2024-01 through the month before the shift."
         fixture_sql: |
-          with sp as (select account_id, min(start_date) as first_start, case when bool_or(end_date is null) then null else max(end_date) end as account_end from saasco_staging.stg_subscriptions group by account_id),
-          na as (select a.acquisition_channel as ch, sp.first_start, case when sp.account_end < sp.first_start + interval 90 day then 1.0 else 0.0 end as c
+          with sp as (select s.account_id, min(s.start_date) as first_start, case when bool_or(s.end_date is null) then null else max(s.end_date) end as account_end from saasco_staging.stg_subscriptions s group by s.account_id),
+          na as (select a.acquisition_channel as ch, sp.first_start as signup, case when sp.account_end < sp.first_start + interval 90 day then 1.0 else 0.0 end as c
             from sp join saasco_staging.stg_accounts a on a.account_id = sp.account_id)
-          select avg(case when ch = 'paid_social' then 1.0 else 0.0 end) from na where first_start < date '2025-10-01'
+          select avg(case when na.ch = 'paid_social' then 1.0 else 0.0 end) from na where na.signup < date '2025-10-01'
         observed: 0.1062
         tolerance_abs: 0.03
       - id: S6.t2
         description: "paid_social share of new accounts, 2026-01..2026-06."
         fixture_sql: |
-          with sp as (select account_id, min(start_date) as first_start, case when bool_or(end_date is null) then null else max(end_date) end as account_end from saasco_staging.stg_subscriptions group by account_id),
-          na as (select a.acquisition_channel as ch, sp.first_start, case when sp.account_end < sp.first_start + interval 90 day then 1.0 else 0.0 end as c
+          with sp as (select s.account_id, min(s.start_date) as first_start, case when bool_or(s.end_date is null) then null else max(s.end_date) end as account_end from saasco_staging.stg_subscriptions s group by s.account_id),
+          na as (select a.acquisition_channel as ch, sp.first_start as signup, case when sp.account_end < sp.first_start + interval 90 day then 1.0 else 0.0 end as c
             from sp join saasco_staging.stg_accounts a on a.account_id = sp.account_id)
-          select avg(case when ch = 'paid_social' then 1.0 else 0.0 end) from na where first_start >= date '2026-01-01'
+          select avg(case when na.ch = 'paid_social' then 1.0 else 0.0 end) from na where na.signup >= date '2026-01-01'
         observed: 0.3533
         tolerance_abs: 0.03
       - id: S6.t3
         description: "90-day churn of new accounts (signup < 2026-04): paid_social / all other channels."
         fixture_sql: |
-          with sp as (select account_id, min(start_date) as first_start, case when bool_or(end_date is null) then null else max(end_date) end as account_end from saasco_staging.stg_subscriptions group by account_id),
-          na as (select a.acquisition_channel as ch, sp.first_start, case when sp.account_end < sp.first_start + interval 90 day then 1.0 else 0.0 end as c
+          with sp as (select s.account_id, min(s.start_date) as first_start, case when bool_or(s.end_date is null) then null else max(s.end_date) end as account_end from saasco_staging.stg_subscriptions s group by s.account_id),
+          na as (select a.acquisition_channel as ch, sp.first_start as signup, case when sp.account_end < sp.first_start + interval 90 day then 1.0 else 0.0 end as c
             from sp join saasco_staging.stg_accounts a on a.account_id = sp.account_id)
-          select avg(c) filter (where ch = 'paid_social') / avg(c) filter (where ch <> 'paid_social') from na where first_start < date '2026-04-01'
+          select avg(na.c) filter (where na.ch = 'paid_social') / avg(na.c) filter (where na.ch <> 'paid_social') from na where na.signup < date '2026-04-01'
         observed: 2.0511
         tolerance_rel: 0.15
       - id: S6.t4
         description: "Mix effect: blended new-account 90-day churn at post-shift channel mix and PRE-shift channel rates, minus the pre-shift blended rate (absolute; > 0 means mix alone raises churn)."
         fixture_sql: |
-          with sp as (select account_id, min(start_date) as first_start, case when bool_or(end_date is null) then null else max(end_date) end as account_end from saasco_staging.stg_subscriptions group by account_id),
-          na as (select a.acquisition_channel as ch, sp.first_start, case when sp.account_end < sp.first_start + interval 90 day then 1.0 else 0.0 end as c
+          with sp as (select s.account_id, min(s.start_date) as first_start, case when bool_or(s.end_date is null) then null else max(s.end_date) end as account_end from saasco_staging.stg_subscriptions s group by s.account_id),
+          na as (select a.acquisition_channel as ch, sp.first_start as signup, case when sp.account_end < sp.first_start + interval 90 day then 1.0 else 0.0 end as c
             from sp join saasco_staging.stg_accounts a on a.account_id = sp.account_id)
-          , g as (select ch, first_start >= date '2025-10-01' as post, count(*) as n, avg(c) as r from na
-            where first_start >= date '2024-01-01' and first_start < date '2026-04-01' group by 1, 2),
-          pre as (select ch, r from g where not post),
-          w as (select ch, n * 1.0 / sum(n) over () as w from g where post)
-          select (select sum(w.w * pre.r) from w join pre using (ch)) - (select sum(n * r) / sum(n) from g where not post)
+          , g as (select na.ch, na.signup >= date '2025-10-01' as post, count(*) as n, avg(na.c) as r from na
+            where na.signup >= date '2024-01-01' and na.signup < date '2026-04-01' group by 1, 2),
+          pre as (select g.ch, g.r from g where not g.post),
+          wt as (select g.ch, g.n * 1.0 / sum(g.n) over () as share from g where g.post)
+          select (select sum(wt.share * pre.r) from wt join pre on pre.ch = wt.ch) - (select sum(g.n * g.r) / sum(g.n) from g where not g.post)
         observed: 0.0119
         tolerance_abs: 0.01
   - id: S7
@@ -350,7 +351,7 @@ stories:
       - id: D1.t1
         description: "2026-Q1 quarterly churn: healthcare / everyone."
         fixture_sql: |
-          with sp as (select account_id, min(start_date) as first_start, case when bool_or(end_date is null) then null else max(end_date) end as account_end from saasco_staging.stg_subscriptions group by account_id),
+          with sp as (select s.account_id, min(s.start_date) as first_start, case when bool_or(s.end_date is null) then null else max(s.end_date) end as account_end from saasco_staging.stg_subscriptions s group by s.account_id),
           q as (select a.industry = 'healthcare' as grp, case when sp.account_end <= date '2026-03-31' then 1.0 else 0.0 end as c
             from sp join saasco_staging.stg_accounts a on a.account_id = sp.account_id
             where sp.first_start < date '2026-01-01' and (sp.account_end is null or sp.account_end >= date '2026-01-01'))
@@ -360,7 +361,7 @@ stories:
       - id: D1.t2
         description: "2025-Q4 quarterly churn: healthcare / everyone (no blip)."
         fixture_sql: |
-          with sp as (select account_id, min(start_date) as first_start, case when bool_or(end_date is null) then null else max(end_date) end as account_end from saasco_staging.stg_subscriptions group by account_id),
+          with sp as (select s.account_id, min(s.start_date) as first_start, case when bool_or(s.end_date is null) then null else max(s.end_date) end as account_end from saasco_staging.stg_subscriptions s group by s.account_id),
           q as (select a.industry = 'healthcare' as grp, case when sp.account_end <= date '2025-12-31' then 1.0 else 0.0 end as c
             from sp join saasco_staging.stg_accounts a on a.account_id = sp.account_id
             where sp.first_start < date '2025-10-01' and (sp.account_end is null or sp.account_end >= date '2025-10-01'))
@@ -370,7 +371,7 @@ stories:
       - id: D1.t3
         description: "healthcare accounts active at the start of 2026-Q1."
         fixture_sql: |
-          with sp as (select account_id, min(start_date) as first_start, case when bool_or(end_date is null) then null else max(end_date) end as account_end from saasco_staging.stg_subscriptions group by account_id),
+          with sp as (select s.account_id, min(s.start_date) as first_start, case when bool_or(s.end_date is null) then null else max(s.end_date) end as account_end from saasco_staging.stg_subscriptions s group by s.account_id),
           q as (select a.industry = 'healthcare' as grp, case when sp.account_end <= date '2026-03-31' then 1.0 else 0.0 end as c
             from sp join saasco_staging.stg_accounts a on a.account_id = sp.account_id
             where sp.first_start < date '2026-01-01' and (sp.account_end is null or sp.account_end >= date '2026-01-01'))

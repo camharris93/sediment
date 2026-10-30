@@ -1,0 +1,150 @@
+# HAND-AUTHORED reference plan — NOT an LLM output.
+#
+# Written by someone who knows the answer key, to demonstrate (offline, no key)
+# that the deterministic machinery — L3-L6, the judge, the skeptic check
+# functions, the report tracer and the scorer — does what the design says on
+# real planted data. It deliberately includes a decoy and a fan-out trap so the
+# demo shows the harness catching them. It says nothing about whether an LLM
+# planner finds these stories; only the live matrix (evals/harness.py
+# --investigate --live) measures that.
+#
+#   python evals/harness.py --investigate --replay evals/investigations/reference_plans/q1_why_churn_up_dev.yaml
+question: "Why is churn up in Q2 2026?"
+dataset: saasco
+config: full
+hypotheses:
+  - id: h1
+    statement: "Annual accounts are hitting their renewal month, and a large annual cohort is renewing now."
+    mechanism: "Prepaid annual accounts cannot churn mid-term, so their churn lands in the renewal month."
+    claim: {metric: logo_churn_rate, dimensions: [billing_interval, "derived:months_to_renewal"], segment: {billing_interval: annual}, direction: higher, window: "2026-04..2026-06"}
+    cuts:
+      - id: h1.c1
+        hypothesis_id: h1
+        purpose: test
+        question: "2026-Q2 monthly churn rate for annual accounts in their renewal month vs monthly-billed accounts."
+        expected_columns: [billing_state, n_account_months, churn_rate]
+        grain: "one row per billing state"
+        test: {kind: group_diff, value_col: churn_rate, n_col: n_account_months, group_col: billing_state, a: annual_renewal_month, b: monthly, direction: higher}
+        sql: |
+          select case when am.billing_interval = 'annual' and (am.tenure_month - 1) % 12 = 0 then 'annual_renewal_month'
+                      when am.billing_interval = 'annual' then 'annual_mid_term'
+                      else 'monthly' end as billing_state,
+                 count(*) as n_account_months,
+                 avg(case when am.is_churn_month then 1.0 else 0.0 end) as churn_rate
+          from saasco_marts.mart_account_months am
+          where am.month >= date '2026-04-01' and am.month < date '2026-07-01' and am.tenure_month > 1
+          group by 1 order by 1
+      - id: h1.c2
+        hypothesis_id: h1
+        purpose: test
+        question: "Renewal-month churn rate of annual accounts by quarter; is 2026-Q2 higher than before?"
+        expected_columns: [quarter_start, n_due, renewal_churn_rate]
+        grain: "one row per quarter"
+        test: {kind: before_after, value_col: renewal_churn_rate, n_col: n_due, time_col: quarter_start, split_at: "2026-04-01", direction: higher}
+        sql: |
+          select strftime(date_trunc('quarter', month), '%Y-%m-%d') as quarter_start,
+                 count(*) as n_due,
+                 avg(case when is_churn_month then 1.0 else 0.0 end) as renewal_churn_rate
+          from saasco_marts.mart_account_months
+          where billing_interval = 'annual' and tenure_month > 1 and (tenure_month - 1) % 12 = 0
+          group by 1 order by 1
+    skeptic:
+      - {kind: small_n, target_cut_id: h1.c1}
+      - kind: simpsons
+        target_cut_id: h1.c1
+        confounder: company_size_band
+        sql: |
+          select case when am.billing_interval = 'annual' and (am.tenure_month - 1) % 12 = 0 then 'annual_renewal_month'
+                      when am.billing_interval = 'annual' then 'annual_mid_term'
+                      else 'monthly' end as billing_state,
+                 am.size_band as company_size_band,
+                 count(*) as n_account_months,
+                 avg(case when am.is_churn_month then 1.0 else 0.0 end) as churn_rate
+          from saasco_marts.mart_account_months am
+          where am.month >= date '2026-04-01' and am.month < date '2026-07-01' and am.tenure_month > 1
+          group by 1, 2 order by 1, 2
+
+  - id: h2
+    statement: "The mix of new accounts shifted toward a high-churn acquisition channel."
+    mechanism: "A growing channel whose accounts churn early raises blended churn without any channel getting worse."
+    claim: {metric: early_churn_rate, dimensions: [acquisition_channel], segment: {acquisition_channel: paid_social}, direction: higher, window: null}
+    cuts:
+      - id: h2.c1
+        hypothesis_id: h2
+        purpose: test
+        question: "90-day churn of new accounts by acquisition channel (signups before 2026-04)."
+        expected_columns: [acquisition_channel, n_new_accounts, churn_90d]
+        grain: "one row per channel"
+        test: {kind: group_diff, value_col: churn_90d, n_col: n_new_accounts, group_col: acquisition_channel, a: paid_social, b: __rest__, direction: higher}
+        sql: |
+          with firsts as (
+            select l.account_id, l.churned_within_90d, a.acquisition_channel
+            from saasco_marts.mart_subscription_lifecycle l
+            join saasco_staging.stg_accounts a on a.account_id = l.account_id
+            where l.start_date < date '2026-04-01'
+            qualify row_number() over (partition by l.account_id order by l.start_date) = 1)
+          select f.acquisition_channel, count(*) as n_new_accounts,
+                 avg(case when f.churned_within_90d then 1.0 else 0.0 end) as churn_90d
+          from firsts f group by 1 order by 1
+      - id: h2.c2
+        hypothesis_id: h2
+        purpose: test
+        question: "Share of new accounts from paid_social by signup quarter, before vs after 2025-10."
+        expected_columns: [signup_quarter, n_new_accounts, paid_social_share]
+        grain: "one row per signup quarter"
+        test: {kind: before_after, value_col: paid_social_share, n_col: n_new_accounts, time_col: signup_quarter, split_at: "2025-10-01", direction: higher}
+        sql: |
+          select strftime(date_trunc('quarter', signup_date), '%Y-%m-%d') as signup_quarter,
+                 count(*) as n_new_accounts,
+                 avg(case when acquisition_channel = 'paid_social' then 1.0 else 0.0 end) as paid_social_share
+          from saasco_staging.stg_accounts group by 1 order by 1
+    skeptic:
+      - {kind: small_n, target_cut_id: h2.c1}
+
+  - id: h3
+    statement: "Healthcare customers started churning at a much higher rate this year."
+    mechanism: "Something specific to the healthcare segment (boring alternative: a small group's noise)."
+    claim: {metric: logo_churn_rate, dimensions: [industry], segment: {industry: healthcare}, direction: higher, window: "2026-01..2026-03"}
+    cuts:
+      - id: h3.c1
+        hypothesis_id: h3
+        purpose: test
+        question: "2026-Q1 churn rate by industry for accounts active on 2026-01-01."
+        expected_columns: [industry, n_accounts, q1_churn_rate]
+        grain: "one row per industry"
+        test: {kind: group_diff, value_col: q1_churn_rate, n_col: n_accounts, group_col: industry, a: healthcare, b: __rest__, direction: higher}
+        sql: |
+          with base as (
+            select am.account_id, am.industry from saasco_marts.mart_account_months am
+            where am.month = date '2026-01-01' and am.tenure_month > 1),
+          ch as (
+            select am.account_id, bool_or(am.is_churn_month) as churned from saasco_marts.mart_account_months am
+            where am.month between date '2026-01-01' and date '2026-03-01' group by am.account_id)
+          select coalesce(b.industry, 'unknown') as industry, count(*) as n_accounts,
+                 avg(case when c.churned then 1.0 else 0.0 end) as q1_churn_rate
+          from base b join ch c on c.account_id = b.account_id group by 1 order by 1
+    skeptic:
+      - {kind: small_n, target_cut_id: h3.c1}
+
+  - id: h4
+    statement: "The accounts churning now are bigger: lost MRR per churned subscription jumped in 2026."
+    mechanism: "Boring alternative: a revenue number built over a one-to-many join counts the same subscription several times."
+    claim: {metric: revenue_churn_rate, dimensions: ["derived:churn_quarter"], segment: {}, direction: higher, window: "2026-01..2026-06"}
+    cuts:
+      - id: h4.c1
+        hypothesis_id: h4
+        purpose: test
+        question: "Average MRR of churned subscriptions by churn quarter, before vs after 2026."
+        expected_columns: [churn_quarter, n_churned_subs, avg_churned_mrr]
+        grain: "one row per churn quarter"
+        test: {kind: before_after, value_col: avg_churned_mrr, n_col: n_churned_subs, time_col: churn_quarter, split_at: "2026-01-01", direction: higher}
+        # Deliberately naive: joins subscriptions to invoice ATTEMPTS and sums a
+        # subscription-grain column, so every failed retry adds the MRR again.
+        sql: |
+          select strftime(date_trunc('quarter', s.end_date), '%Y-%m-%d') as churn_quarter,
+                 count(*) as n_churned_subs,
+                 sum(s.list_price_monthly * s.seats) / count(*) as avg_churned_mrr
+          from saasco_staging.stg_subscriptions s
+          join saasco_staging.stg_invoices i on i.subscription_id = s.subscription_id
+          where s.end_date >= date '2025-01-01'
+          group by 1 order by 1

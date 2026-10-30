@@ -1,0 +1,89 @@
+# HAND-AUTHORED reference plan — NOT an LLM output. See q1_why_churn_up_dev.yaml.
+question: "Why did churn in Europe jump this year?"
+dataset: saasco
+config: full
+hypotheses:
+  - id: h1
+    statement: "European churn in 2026 is mostly failed payments, not customers choosing to leave."
+    mechanism: "Repeated failed payment attempts end subscriptions; the cancel reason recorded does not say so."
+    claim: {metric: failed_payment_share, dimensions: [region, failed_attempts_before_end], segment: {region: EU}, direction: higher, window: "2026-01..2026-06"}
+    cuts:
+      - id: h1.c1
+        hypothesis_id: h1
+        purpose: test
+        question: "Among subscriptions that churned in 2026, the share with 2+ failed payment attempts in the 30 days before ending, EU vs other regions."
+        expected_columns: [region, n_churned, share_failed_2plus]
+        grain: "one row per region"
+        test: {kind: group_diff, value_col: share_failed_2plus, n_col: n_churned, group_col: region, a: EU, b: __rest__, direction: higher}
+        sql: |
+          select a.region, count(l.subscription_id) as n_churned,
+                 avg(case when l.failed_attempts_before_end >= 2 then 1.0 else 0.0 end) as share_failed_2plus
+          from saasco_marts.mart_subscription_lifecycle l
+          join saasco_staging.stg_accounts a on a.account_id = l.account_id
+          where l.ended_by = 'churn' and l.end_date >= date '2026-01-01'
+          group by 1 order by 1
+      - id: h1.c2
+        hypothesis_id: h1
+        purpose: test
+        question: "EU monthly logo churn rate before vs after 2026-01."
+        expected_columns: [month, n_accounts, churn_rate]
+        grain: "one row per month"
+        test: {kind: before_after, value_col: churn_rate, n_col: n_accounts, time_col: month, split_at: "2026-01-01", direction: higher}
+        sql: |
+          select strftime(month, '%Y-%m') as month, count(*) as n_accounts,
+                 avg(case when is_churn_month then 1.0 else 0.0 end) as churn_rate
+          from saasco_marts.mart_account_months
+          where region = 'EU' and tenure_month > 1 and month >= date '2025-01-01'
+          group by 1 order by 1
+    skeptic:
+      - kind: simpsons
+        target_cut_id: h1.c1
+        confounder: plan_tier
+        sql: |
+          select a.region, l.plan_tier, count(l.subscription_id) as n_churned,
+                 avg(case when l.failed_attempts_before_end >= 2 then 1.0 else 0.0 end) as share_failed_2plus
+          from saasco_marts.mart_subscription_lifecycle l
+          join saasco_staging.stg_accounts a on a.account_id = l.account_id
+          where l.ended_by = 'churn' and l.end_date >= date '2026-01-01'
+          group by 1, 2 order by 1, 2
+      - {kind: small_n, target_cut_id: h1.c1}
+
+  - id: h2
+    statement: "European customers are leaving because the product got too expensive for them."
+    mechanism: "Price sensitivity: more churners citing price."
+    claim: {metric: other, dimensions: [region, cancel_reason], segment: {region: EU}, direction: higher, window: "2026-01..2026-06"}
+    cuts:
+      - id: h2.c1
+        hypothesis_id: h2
+        purpose: test
+        question: "Share of 2026 churned subscriptions whose cancel_reason is too_expensive, EU vs other regions."
+        expected_columns: [region, n_churned, share_too_expensive]
+        grain: "one row per region"
+        test: {kind: group_diff, value_col: share_too_expensive, n_col: n_churned, group_col: region, a: EU, b: __rest__, direction: higher}
+        sql: |
+          select a.region, count(l.subscription_id) as n_churned,
+                 avg(case when s.cancel_reason = 'too_expensive' then 1.0 else 0.0 end) as share_too_expensive
+          from saasco_marts.mart_subscription_lifecycle l
+          join saasco_staging.stg_subscriptions s on s.subscription_id = l.subscription_id
+          join saasco_staging.stg_accounts a on a.account_id = l.account_id
+          where l.ended_by = 'churn' and l.end_date >= date '2026-01-01'
+          group by 1 order by 1
+
+  - id: h3
+    statement: "Europe's customer base shifted toward the starter tier, which always churns more."
+    mechanism: "Boring alternative: a mix shift in plan tier, not a change in behaviour."
+    claim: {metric: other, dimensions: [region, plan_tier], segment: {plan_tier: starter}, direction: higher, window: null}
+    cuts:
+      - id: h3.c1
+        hypothesis_id: h3
+        purpose: test
+        question: "Starter share of active EU accounts by month, before vs after 2026-01."
+        expected_columns: [month, n_accounts, starter_share]
+        grain: "one row per month"
+        test: {kind: before_after, value_col: starter_share, n_col: n_accounts, time_col: month, split_at: "2026-01-01", direction: higher}
+        sql: |
+          select strftime(month, '%Y-%m') as month, count(*) as n_accounts,
+                 avg(case when plan_tier = 'starter' then 1.0 else 0.0 end) as starter_share
+          from saasco_marts.mart_account_months
+          where region = 'EU' and month >= date '2025-01-01'
+          group by 1 order by 1

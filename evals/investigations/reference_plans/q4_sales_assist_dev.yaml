@@ -1,0 +1,83 @@
+# HAND-AUTHORED reference plan — NOT an LLM output. See q1_why_churn_up_dev.yaml.
+# Shows the judge CONFIRMING a pooled comparison that the skeptic's
+# deterministic stratification then REFUTES (Simpson's paradox).
+question: "Does having a salesperson involved help retention?"
+dataset: saasco
+config: full
+hypotheses:
+  - id: h1
+    statement: "Sales-assisted accounts churn more — the sales motion brings in worse-fit customers."
+    mechanism: "Salespeople close accounts that would not have bought on their own."
+    claim: {metric: logo_churn_rate, dimensions: [sales_assisted], segment: {sales_assisted: true}, direction: higher, window: null}
+    cuts:
+      - id: h1.c1
+        hypothesis_id: h1
+        purpose: test
+        question: "Monthly logo churn rate over all account-months, sales-assisted vs not."
+        expected_columns: [sales_assisted, n_account_months, churn_rate]
+        grain: "one row per sales_assisted value"
+        test: {kind: group_diff, value_col: churn_rate, n_col: n_account_months, group_col: sales_assisted, a: true, b: false, direction: higher}
+        sql: |
+          select sales_assisted, count(*) as n_account_months,
+                 avg(case when is_churn_month then 1.0 else 0.0 end) as churn_rate
+          from saasco_marts.mart_account_months where tenure_month > 1
+          group by 1 order by 1
+    skeptic:
+      - kind: simpsons
+        target_cut_id: h1.c1
+        confounder: size_band
+        sql: |
+          select sales_assisted, size_band, count(*) as n_account_months,
+                 avg(case when is_churn_month then 1.0 else 0.0 end) as churn_rate
+          from saasco_marts.mart_account_months where tenure_month > 1
+          group by 1, 2 order by 1, 2
+      - {kind: small_n, target_cut_id: h1.c1}
+
+  - id: h2
+    statement: "Within the same company size, sales-assisted accounts churn less."
+    mechanism: "Onboarding help from a salesperson improves retention once size is held fixed."
+    claim: {metric: logo_churn_rate, dimensions: [sales_assisted, size_band], segment: {sales_assisted: true}, direction: lower, window: null}
+    cuts:
+      - id: h2.c1
+        hypothesis_id: h2
+        purpose: test
+        question: "Monthly logo churn rate for 1-10 employee accounts, sales-assisted vs not."
+        expected_columns: [sales_assisted, n_account_months, churn_rate]
+        grain: "one row per sales_assisted value"
+        test: {kind: group_diff, value_col: churn_rate, n_col: n_account_months, group_col: sales_assisted, a: true, b: false, direction: lower}
+        sql: |
+          select sales_assisted, count(*) as n_account_months,
+                 avg(case when is_churn_month then 1.0 else 0.0 end) as churn_rate
+          from saasco_marts.mart_account_months where tenure_month > 1 and size_band = '1-10'
+          group by 1 order by 1
+      - id: h2.c2
+        hypothesis_id: h2
+        purpose: test
+        question: "Monthly logo churn rate for 11-50 employee accounts, sales-assisted vs not."
+        expected_columns: [sales_assisted, n_account_months, churn_rate]
+        grain: "one row per sales_assisted value"
+        test: {kind: group_diff, value_col: churn_rate, n_col: n_account_months, group_col: sales_assisted, a: true, b: false, direction: lower}
+        sql: |
+          select sales_assisted, count(*) as n_account_months,
+                 avg(case when is_churn_month then 1.0 else 0.0 end) as churn_rate
+          from saasco_marts.mart_account_months where tenure_month > 1 and size_band = '11-50'
+          group by 1 order by 1
+    skeptic:
+      - {kind: small_n, target_cut_id: h2.c1}
+
+  - id: h3
+    statement: "Sales assistance is concentrated in the smallest companies, which churn most."
+    mechanism: "Boring alternative: the pooled gap is composition, not the sales motion."
+    claim: {metric: other, dimensions: [sales_assisted, size_band], segment: {size_band: "1-10"}, direction: higher, window: null}
+    cuts:
+      - id: h3.c1
+        hypothesis_id: h3
+        purpose: test
+        question: "Share of accounts that are sales-assisted, by company size band."
+        expected_columns: [size_band, n_accounts, sales_assisted_share]
+        grain: "one row per size band"
+        test: {kind: group_diff, value_col: sales_assisted_share, n_col: n_accounts, group_col: size_band, a: "1-10", b: __rest__, direction: higher}
+        sql: |
+          select company_size_band as size_band, count(*) as n_accounts,
+                 avg(case when sales_assisted then 1.0 else 0.0 end) as sales_assisted_share
+          from saasco_staging.stg_accounts group by 1 order by 1
